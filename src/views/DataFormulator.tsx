@@ -331,7 +331,7 @@ export const DataFormulatorFC = ({ }) => {
                         zIndex: 1000,
                     }}>
                         <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
-                            <Box component="img" sx={{  width: 196, margin: "auto" }} alt="" src={dfLogo} fetchPriority="high" />
+                            <Box component="img" sx={{  width: 196, margin: "auto" }} alt="Data Formulator logo" src={dfLogo} fetchPriority="high" />
                             <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
                                 {toolName}
                             </Typography>
