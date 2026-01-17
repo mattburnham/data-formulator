@@ -6,6 +6,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import {
     Box,
     Button,
+    Chip,
     Dialog,
     DialogContent,
     DialogTitle,
@@ -18,7 +19,7 @@ import {
     Input,
     alpha,
     useTheme,
-    Divider,
+    Card,
 } from '@mui/material';
 
 import CloseIcon from '@mui/icons-material/Close';
@@ -88,6 +89,8 @@ interface PreviewPanelProps {
     emptyLabel: string;
     meta?: string;
     onRemoveTable?: (index: number) => void;
+    activeIndex?: number;
+    onActiveIndexChange?: (index: number) => void;
 }
 
 const PreviewPanel: React.FC<PreviewPanelProps> = ({
@@ -99,27 +102,37 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
     emptyLabel,
     meta,
     onRemoveTable,
+    activeIndex: controlledActiveIndex,
+    onActiveIndexChange,
 }) => {
     const previewTables = tables ?? (table ? [table] : null);
-    const [activeIndex, setActiveIndex] = useState(0);
+    const [internalActiveIndex, setInternalActiveIndex] = useState(0);
+    const activeIndex = controlledActiveIndex !== undefined ? controlledActiveIndex : internalActiveIndex;
+    const setActiveIndex = onActiveIndexChange || setInternalActiveIndex;
 
     useEffect(() => {
         if (!previewTables || previewTables.length === 0) {
-            setActiveIndex(0);
+            if (onActiveIndexChange) {
+                onActiveIndexChange(0);
+            } else {
+                setInternalActiveIndex(0);
+            }
             return;
         }
         if (activeIndex > previewTables.length - 1) {
-            setActiveIndex(previewTables.length - 1);
+            const newIndex = previewTables.length - 1;
+            if (onActiveIndexChange) {
+                onActiveIndexChange(newIndex);
+            } else {
+                setInternalActiveIndex(newIndex);
+            }
         }
-    }, [previewTables, activeIndex]);
+    }, [previewTables, activeIndex, onActiveIndexChange]);
 
     const activeTable = previewTables && previewTables.length > 0 ? previewTables[activeIndex] : null;
     return (
         <Box
             sx={{
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 1,
                 p: 1,
                 display: 'flex',
                 flexDirection: 'column',
@@ -127,23 +140,6 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
                 minHeight: 120,
             }}
         >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {title}
-                </Typography>
-                {onRemoveTable && previewTables && previewTables.length > 0 && (
-                    <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => onRemoveTable(activeIndex)}
-                        sx={{ ml: 'auto' }}
-                        aria-label="Remove table"
-                    >
-                        <DeleteIcon fontSize="small" />
-                    </IconButton>
-                )}
-            </Box>
-
             {loading && <LinearProgress />}
 
             {error && (
@@ -160,96 +156,107 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
 
             {previewTables && previewTables.length > 0 && (
                 <Box>
-                    {previewTables.length > 1 && (
-                        <Box
-                            sx={{
-                                display: 'flex',
-                                flexWrap: 'nowrap',
-                                gap: 0.25,
-                                mb: 0.5,
-                                pb: 0.25,
-                                overflowX: 'auto',
-                                overflowY: 'hidden',
-                                '&::-webkit-scrollbar': { height: 4 },
-                                '&::-webkit-scrollbar-thumb': {
-                                    backgroundColor: 'action.disabled',
-                                    borderRadius: 4,
-                                },
-                            }}
-                        >
-                            {previewTables.map((t, idx) => {
-                                const label = t.displayId || t.id;
-                                return (
-                                    <Tooltip key={`${t.id}-${idx}`} title={label} placement="top" arrow>
-                                        <Button
-                                            size="small"
-                                            variant="text"
-                                            onClick={() => setActiveIndex(idx)}
-                                            sx={{
-                                                textTransform: 'none',
-                                                minWidth: 'auto',
-                                                px: 1,
-                                                py: 0.5,
-                                                borderRadius: 1,
-                                                borderBottom: '2px solid',
-                                                borderBottomColor: idx === activeIndex ? (theme) => alpha(theme.palette.primary.main, 0.6) : 'transparent',
-                                                backgroundColor: idx === activeIndex ? (theme) => alpha(theme.palette.primary.main, 0.08) : 'transparent',
-                                                color: idx === activeIndex ? 'text.primary' : 'text.secondary',
-                                                fontWeight: idx === activeIndex ? 600 : 500,
-                                                fontSize: 12,
-                                                lineHeight: 1.2,
-                                                maxWidth: 160,
+                    <Box
+                        sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            flexWrap: 'nowrap',
+                            gap: 0.25,
+                            mb: 0.5,
+                            pb: 0.25,
+                            overflowX: 'auto',
+                            overflowY: 'hidden',
+                            '&::-webkit-scrollbar': { height: 4 },
+                            '&::-webkit-scrollbar-thumb': {
+                                backgroundColor: 'action.disabled',
+                                borderRadius: 4,
+                            },
+                        }}
+                    >
+                        <Typography variant="caption" sx={{ fontSize: '0.625rem', fontWeight: 'bold' }}>Preview</Typography>
+                        {previewTables.map((t, idx) => {
+                            const label = t.displayId || t.id;
+                            const isSelected = idx === activeIndex;
+                            return (
+                                <Tooltip key={`${t.id}-${idx}`} title={label} placement="top" arrow>
+                                    <Chip
+                                        label={label}
+                                        size="small"
+                                        onClick={() => {
+                                            if (onActiveIndexChange) {
+                                                onActiveIndexChange(idx);
+                                            } else {
+                                                setInternalActiveIndex(idx);
+                                            }
+                                        }}
+                                        sx={{
+                                            borderRadius: 1,
+                                            cursor: 'pointer',
+                                            maxWidth: 160,
+                                            backgroundColor: (theme) => 
+                                                isSelected 
+                                                    ? alpha(theme.palette.primary.main, 0.12)
+                                                    : 'transparent',
+                                            borderColor: (theme) => 
+                                                isSelected 
+                                                    ? alpha(theme.palette.primary.main, 0.5)
+                                                    : undefined,
+                                            color: (theme) => 
+                                                isSelected 
+                                                    ? theme.palette.primary.main
+                                                    : theme.palette.text.secondary,
+                                            '& .MuiChip-label': {
+                                                fontSize: '0.625rem',
                                                 overflow: 'hidden',
-                                                '&:hover': {
-                                                    backgroundColor: (theme) => alpha(theme.palette.primary.main, 0.06),
-                                                },
-                                                '& .MuiButton-label': {
-                                                    overflow: 'hidden',
-                                                },
-                                            }}
-                                        >
-                                            <Box
-                                                component="span"
-                                                sx={{
-                                                    display: 'inline-block',
-                                                    maxWidth: 140,
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    whiteSpace: 'nowrap',
-                                                }}
-                                            >
-                                                {label}
-                                            </Box>
-                                        </Button>
-                                    </Tooltip>
-                                );
-                            })}
-                        </Box>
-                    )}
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                maxWidth: 140,
+                                            },
+                                            '&:hover': {
+                                                backgroundColor: (theme) => 
+                                                    isSelected 
+                                                        ? alpha(theme.palette.primary.main, 0.16)
+                                                        : alpha(theme.palette.primary.main, 0.08),
+                                            },
+                                        }}
+                                    />
+                                </Tooltip>
+                            );
+                        })}
+                        {onRemoveTable && (
+                            <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => onRemoveTable(activeIndex)}
+                                sx={{ ml: 'auto', flexShrink: 0 }}
+                                aria-label="Remove table"
+                            >
+                                <DeleteIcon fontSize="small" />
+                            </IconButton>
+                        )}
+                    </Box>
 
                     {activeTable && (
-                        <Box sx={{ pb: 1 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                <Typography variant="caption" color="text.secondary">
-                                    {activeTable.rows.length} rows × {activeTable.names.length} columns
-                                    {previewTables && previewTables.length === 1
-                                        ? ` • ${activeTable.displayId || activeTable.id}`
-                                        : ''}
-                                </Typography>
-                            </Box>
-                            <CustomReactTable
-                                rows={activeTable.rows.slice(0, 12)}
-                                columnDefs={activeTable.names.map(name => ({
-                                    id: name,
-                                    label: name,
-                                    minWidth: 60,
-                                }))}
-                                rowsPerPageNum={-1}
-                                compact={true}
-                                isIncompleteTable={activeTable.rows.length > 12}
-                                maxHeight={200}
-                            />
-                        </Box>
+                        <Box>
+                            <Card variant="outlined" sx={{ pb: 0.5 }}>
+                                <CustomReactTable
+                                    rows={activeTable.rows.slice(0, 12)}
+                                    columnDefs={activeTable.names.map(name => ({
+                                        id: name,
+                                        label: name,
+                                        minWidth: 60,
+                                    }))}
+                                    rowsPerPageNum={-1}
+                                    compact={true}
+                                    isIncompleteTable={activeTable.rows.length > 12}
+                                    maxHeight={200}
+                                />
+                            
+                            </Card>
+                            <Typography variant="caption" color="text.secondary">
+                            {activeTable.rows.length} rows × {activeTable.names.length} columns
+                        </Typography>
+                      </Box>
                     )}
                 </Box>
             )}
@@ -387,6 +394,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [filePreviewLoading, setFilePreviewLoading] = useState<boolean>(false);
     const [filePreviewError, setFilePreviewError] = useState<string | null>(null);
     const [filePreviewFiles, setFilePreviewFiles] = useState<File[]>([]);
+    const [filePreviewActiveIndex, setFilePreviewActiveIndex] = useState<number>(0);
 
     // Sample datasets state
     const [datasetPreviews, setDatasetPreviews] = useState<DatasetMetadata[]>([]);
@@ -556,7 +564,30 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         }
     };
 
-    const handleFileLoadSubmit = (): void => {
+    // Reset activeIndex when tables change
+    useEffect(() => {
+        if (filePreviewTables && filePreviewTables.length > 0) {
+            if (filePreviewActiveIndex >= filePreviewTables.length) {
+                setFilePreviewActiveIndex(filePreviewTables.length - 1);
+            }
+        } else {
+            setFilePreviewActiveIndex(0);
+        }
+    }, [filePreviewTables, filePreviewActiveIndex]);
+
+    const handleFileLoadSingleTable = (): void => {
+        if (!filePreviewTables || filePreviewTables.length === 0) {
+            return;
+        }
+        const table = filePreviewTables[filePreviewActiveIndex];
+        if (table) {
+            dispatch(dfActions.loadTable(table));
+            dispatch(fetchFieldSemanticType(table));
+            handleClose();
+        }
+    };
+
+    const handleFileLoadAllTables = (): void => {
         if (!filePreviewTables || filePreviewTables.length === 0) {
             return;
         }
@@ -694,7 +725,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         { 
             value: 'upload' as UploadTabType, 
             title: 'Upload File', 
-            description: 'Upload structured data (CSV, TSV, JSON, Excel) from files or URLs',
+            description: 'Structured data (CSV, TSV, JSON, Excel) from files or URLs',
             icon: <UploadFileIcon />, 
             disabled: false,
             disabledReason: undefined
@@ -805,6 +836,21 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             flexDirection: 'column',
                             gap: 2,
                         }}>
+                            {/* Section hint */}
+                            <Typography 
+                                variant="body2" 
+                                color="text.secondary" 
+                                sx={{ 
+                                    textAlign: 'left',
+                                    my: 1,
+                                    opacity: 0.6,
+                                    fontSize: '0.75rem',
+                                    letterSpacing: '0.02em'
+                                }}
+                            >
+                                Local data
+                            </Typography>
+
                             {/* Regular Data Sources Group */}
                             <Box sx={{ 
                                 display: 'grid', 
@@ -824,8 +870,20 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 ))}
                             </Box>
 
-                            {/* Divider */}
-                            <Divider sx={{ my: 1 }} />
+                            {/* Section hint */}
+                            <Typography 
+                                variant="body2" 
+                                color="text.secondary" 
+                                sx={{ 
+                                    textAlign: 'left',
+                                    my: 1,
+                                    opacity: 0.6,
+                                    fontSize: '0.75rem',
+                                    letterSpacing: '0.02em'
+                                }}
+                            >
+                                Or connect to a database
+                            </Typography>
 
                             {/* Database Data Sources Group */}
                             <Box sx={{ 
@@ -860,7 +918,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         p: 2,
                         justifyContent: showFilePreview ? 'flex-start' : 'center',
                     }}>
-                        <Box sx={{ width: '100%', maxWidth: showFilePreview ? '100%' : 760, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Box sx={{ width: '100%', maxWidth: showFilePreview ? '60%' : 760, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <Input
                             inputProps={{ 
                                 accept: '.csv,.tsv,.json,.xlsx,.xls',
@@ -891,9 +949,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         ) : (
                             <Box sx={{ 
                                 display: 'flex', 
-                                flexDirection: showFilePreview ? 'row' : 'column',
+                                flexDirection: 'column',
                                 gap: 2,
-                                alignItems: showFilePreview ? 'flex-start' : 'stretch',
+                                alignItems: 'stretch',
                             }}>
                                 <Box
                                     sx={{
@@ -904,7 +962,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         textAlign: 'center',
                                         cursor: 'pointer',
                                         transition: 'all 0.2s',
-                                        flex: showFilePreview ? '0 0 45%' : '1',
+                                        flex: '1',
                                         minWidth: showFilePreview ? 0 : 'auto',
                                         '&:hover': {
                                             borderColor: 'primary.main',
@@ -932,8 +990,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     display: 'flex', 
                                     alignItems: 'center', 
                                     gap: 1,
-                                    flex: showFilePreview ? '1' : '0 0 auto',
-                                    minWidth: showFilePreview ? 0 : 'auto',
+                                    flex: '0 0 auto',
                                 }}>
                                     <TextField
                                         fullWidth
@@ -964,33 +1021,48 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 </Box>
                             </Box>
                         )}
+                        </Box>
 
                         {showFilePreview && (
-                            <PreviewPanel
-                                title="Preview"
-                                loading={filePreviewLoading}
-                                error={filePreviewError}
-                                tables={filePreviewTables}
-                                emptyLabel={serverConfig.DISABLE_FILE_UPLOAD ? 'File upload is disabled.' : 'Select a file to preview.'}
-                                meta={filePreviewTables && filePreviewTables.length > 0 ? `${filePreviewTables.length} table${filePreviewTables.length > 1 ? 's' : ''} previewed${hasMultipleFileTables ? ' • Multiple sheets detected' : ''}` : undefined}
-                                onRemoveTable={handleRemoveFilePreviewTable}
-                            />
+                            <Box sx={{ width: '90%', alignSelf: 'center' }}>
+                                <PreviewPanel
+                                    title="Preview"
+                                    loading={filePreviewLoading}
+                                    error={filePreviewError}
+                                    tables={filePreviewTables}
+                                    emptyLabel={serverConfig.DISABLE_FILE_UPLOAD ? 'File upload is disabled.' : 'Select a file to preview.'}
+                                    meta={filePreviewTables && filePreviewTables.length > 0 ? `${filePreviewTables.length} table${filePreviewTables.length > 1 ? 's' : ''} previewed${hasMultipleFileTables ? ' • Multiple sheets detected' : ''}` : undefined}
+                                    onRemoveTable={handleRemoveFilePreviewTable}
+                                    activeIndex={filePreviewActiveIndex}
+                                    onActiveIndexChange={setFilePreviewActiveIndex}
+                                />
+                            </Box>
                         )}
 
                         {filePreviewTables && filePreviewTables.length > 0 && (
                             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                                 <Button
-                                    variant="contained"
+                                    variant="outlined"
                                     size="small"
-                                    onClick={handleFileLoadSubmit}
+                                    onClick={handleFileLoadSingleTable}
                                     disabled={serverConfig.DISABLE_FILE_UPLOAD || filePreviewLoading}
                                     sx={{ textTransform: 'none' }}
                                 >
-                                    {hasMultipleFileTables ? 'Load Tables' : 'Load Table'}
+                                    Load Table
                                 </Button>
+                                {hasMultipleFileTables && (
+                                    <Button
+                                        variant="contained"
+                                        size="small"
+                                        onClick={handleFileLoadAllTables}
+                                        disabled={serverConfig.DISABLE_FILE_UPLOAD || filePreviewLoading}
+                                        sx={{ textTransform: 'none' }}
+                                    >
+                                        Load All Tables
+                                    </Button>
+                                )}
                             </Box>
                         )}
-                        </Box>
                     </Box>
                 </TabPanel>
 
@@ -1114,7 +1186,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                 {/* Explore Sample Datasets Tab */}
                 <TabPanel value={activeTab} index="explore">
-                    <Box sx={{ p: 2 }}>
+                    <Box sx={{ p: 2, height: '100%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
                         <DatasetSelectionView 
                         datasets={datasetPreviews} 
                         hideRowNum
@@ -1138,7 +1210,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             }
                             handleClose();
                         }}
-                    />
+                        />
                     </Box>
                 </TabPanel>
             </DialogContent>

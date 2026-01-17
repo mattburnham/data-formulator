@@ -6,7 +6,7 @@ import { useEffect } from 'react';
 
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
-import { Button, Paper } from '@mui/material';
+import { Button, Card, Paper } from '@mui/material';
 import { CustomReactTable } from './ReactTable';
 import { createTableFromFromObjectArray } from '../data/utils';
 
@@ -56,93 +56,112 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
     }
 
     return (
-        <Box sx={{ flexGrow: 1, bgcolor: 'background.paper', display: 'flex', height: 600, borderRadius: 2 }} >
+        <Box sx={{ bgcolor: 'background.paper', display: 'flex', height: '100%', borderRadius: 2, overflow: 'hidden' }} >
             {/* Button navigation */}
             <Box sx={{ 
-                minWidth: 180, 
+                minWidth: 180,
+                maxWidth: 180,
+                width: 180,
                 display: 'flex',
                 flexDirection: 'column',
                 borderRight: 1,
-                borderColor: 'divider'
+                borderColor: 'divider',
+                overflow: 'hidden',
+                height: '100%'
             }}>
-                {datasetTitles.map((title, i) => (
-                    <Button
-                        key={i}
-                        variant="text"
-                        size="small"
-                        color='primary'
-                        onClick={() => handleDatasetSelect(i)}
-                        sx={{
-                            fontSize: 12,
-                            textTransform: "none",
-                            width: 180,
-                            justifyContent: 'flex-start',
-                            textAlign: 'left',
-                            borderRadius: 0,
-                            py: 1,
-                            px: 2,
-                            color: selectedDatasetName === title ? 'primary.main' : 'text.secondary',
-                            borderRight: selectedDatasetName === title ? 2 : 0,
-                            borderColor: 'primary.main',
-                        }}
-                    >
-                        {title}
-                    </Button>
-                ))}
+                <Box sx={{ 
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflowY: 'auto',
+                    overflowX: 'hidden',
+                    flex: 1,
+                    minHeight: 0,
+                    height: '100%',
+                    position: 'relative',
+                    overscrollBehavior: 'contain'
+                }}>
+                    {datasetTitles.map((title, i) => (
+                        <Button
+                            key={i}
+                            variant="text"
+                            size="small"
+                            color='primary'
+                            onClick={() => handleDatasetSelect(i)}
+                            sx={{
+                                fontSize: 12,
+                                textTransform: "none",
+                                width: 180,
+                                justifyContent: 'flex-start',
+                                textAlign: 'left',
+                                borderRadius: 0,
+                                py: 1,
+                                px: 2,
+                                color: selectedDatasetName === title ? 'primary.main' : 'text.secondary',
+                                borderRight: selectedDatasetName === title ? 2 : 0,
+                                borderColor: 'primary.main',
+                            }}
+                        >
+                            {title}
+                        </Button>
+                    ))}
+                </Box>
             </Box>
 
             {/* Content area */}
-            <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
-                {datasets.map((dataset, i) => {
-                    if (dataset.name !== selectedDatasetName) return null;
+            <Box sx={{ flex: 1, overflow: 'hidden', minWidth: 0, minHeight: 0, height: '100%', position: 'relative' }}>
+                <Box sx={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', p: 2, minWidth: 0, overscrollBehavior: 'contain' }}>
+                    {datasets.map((dataset, i) => {
+                        if (dataset.name !== selectedDatasetName) return null;
 
-                    let tableComponents = dataset.tables.map((table, j) => {
-                        let t = createTableFromFromObjectArray(table.table_name, table.sample, true);
-                        let maxDisplayRows = dataset.tables.length > 1 ? 5 : 9;
-                        if (t.rows.length < maxDisplayRows) {
-                            maxDisplayRows = t.rows.length - 1;
-                        }
-                        let sampleRows = [
-                            ...t.rows.slice(0,maxDisplayRows), 
-                            Object.fromEntries(t.names.map(n => [n, "..."]))
-                        ];
-                        let colDefs = t.names.map(name => { return {
-                            id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
-                        }})
+                        let tableComponents = dataset.tables.map((table, j) => {
+                            let t = createTableFromFromObjectArray(table.table_name, table.sample, true);
+                            let maxDisplayRows = dataset.tables.length > 1 ? 5 : 9;
+                            if (t.rows.length < maxDisplayRows) {
+                                maxDisplayRows = t.rows.length - 1;
+                            }
+                            let sampleRows = [
+                                ...t.rows.slice(0,maxDisplayRows), 
+                                Object.fromEntries(t.names.map(n => [n, "..."]))
+                            ];
+                            let colDefs = t.names.map(name => { return {
+                                id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
+                            }})
 
-                        let content = <Paper variant="outlined" key={t.names.join("-")} sx={{width: 800, maxWidth: '100%', padding: "0px", marginBottom: "8px"}}>
-                            <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />
-                        </Paper>
-
-                        return (
-                            <Box key={j}>
-                                <Typography variant="subtitle2" sx={{ mb: 1, fontSize: 12}} color="text.secondary">
-                                    {table.url.split("/").pop()?.split(".")[0]}  ({Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`})
-                                </Typography>
-                                {content}
-                            </Box>
-                        )
-                    });
-                    
-                    return (
-                        <Box key={i}>
-                            <Box sx={{mb: 1, gap: 1, maxWidth: 800, display: "flex", alignItems: "center"}}>
-                                <Typography sx={{fontSize: 12}}>
-                                    {dataset.description} <Typography variant="caption" sx={{color: "primary.light", fontSize: 10, mx: 0.5}}>[from {dataset.source}]</Typography> 
-                                </Typography>
-                                <Box sx={{marginLeft: "auto", flexShrink: 0}} >
-                                    <Button size="small" variant="contained" 
-                                            onClick={(event: React.MouseEvent<HTMLElement>) => {
-                                                handleSelectDataset(dataset);
-                                            }}>
-                                        load dataset
-                                    </Button>
+                            return (
+                                <Box key={j}>
+                                    <Typography variant="subtitle2" sx={{ mb: 1, fontSize: 12}} color="text.secondary">
+                                        {table.url.split("/").pop()?.split(".")[0]}  ({Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`})
+                                    </Typography>
+                                    <Box sx={{ maxWidth: '100%', overflowX: 'auto', display: 'flex', flexDirection: 'column', mb: 1 }}>
+                                        <Card variant="outlined" sx={{
+                                            width: 800, minWidth: 'fit-content', padding: "0px"}}>
+                                            <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />
+                                        </Card>
+                                    </Box>
                                 </Box>
+                            )
+                        });
+                        
+                        return (
+                            <Box key={i}>
+                                <Box sx={{mb: 1, gap: 1, maxWidth: 800, display: "flex", alignItems: "center"}}>
+                                    <Typography sx={{fontSize: 12}}>
+                                        {dataset.description} <Typography variant="caption" sx={{color: "primary.light", fontSize: 10, mx: 0.5}}>[from {dataset.source}]</Typography> 
+                                    </Typography>
+                                    <Box sx={{marginLeft: "auto", flexShrink: 0}} >
+                                        <Button size="small" variant="contained" 
+                                                onClick={(event: React.MouseEvent<HTMLElement>) => {
+                                                    handleSelectDataset(dataset);
+                                                }}>
+                                            load dataset
+                                        </Button>
+                                    </Box>
+                                </Box>
+                                {tableComponents}
                             </Box>
-                            {tableComponents}
-                        </Box>
-                    );
-                })}
+                        );
+                    })}
+                </Box>
             </Box>
         </Box>
     );

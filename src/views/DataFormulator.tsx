@@ -281,7 +281,16 @@ export const DataFormulatorFC = ({ }) => {
             <Box sx={{my: 4}}>
                 <Typography sx={{ 
                     maxWidth: 1100, fontSize: 32, color: alpha(theme.palette.text.primary, 0.8), 
-                    '& span': { textDecoration: 'underline', textUnderlineOffset: '0.2em', cursor: 'pointer', color: theme.palette.primary.main }}}>
+                    lineHeight: 2,
+                    '& span': { 
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.02em',
+                        textDecoration: 'underline', textUnderlineOffset: '0.2em', 
+                        cursor: 'pointer', color: theme.palette.primary.main,
+                        '&:hover': {
+                            color: theme.palette.primary.dark,
+                        }
+                    }}}>
                     To begin, 
                     {' '}<span onClick={() => openUploadDialog('extract')}>extract</span>{' '}
                     data from images or text documents, load {' '}

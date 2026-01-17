@@ -42,7 +42,7 @@ import TableRowsIcon from '@mui/icons-material/TableRows';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
 
-import { getUrls } from '../app/utils';
+import { getUrls, fetchWithSession } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
 import { DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
@@ -101,16 +101,19 @@ const ViewIcon: React.FC<{ sx?: SxProps }> = ({ sx }) => (
     </Box>
 );
 
-export const handleDBDownload = async (sessionId: string) => {
+export const handleDBDownload = async (sessionId: string, dispatch?: any) => {
     try {
-        const response = await fetch(getUrls().DOWNLOAD_DB_FILE, {
-            method: 'GET',
-        });
+        // Use fetchWithSession which automatically handles session ID if missing
+        const response = await fetchWithSession(
+            getUrls().DOWNLOAD_DB_FILE,
+            { method: 'GET' },
+            dispatch
+        );
         
         // Check if the response is ok
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to download database file');
+            throw new Error(errorData.error || errorData.message || 'Failed to download database file');
         }
 
         // Get the blob directly from response
@@ -120,7 +123,7 @@ export const handleDBDownload = async (sessionId: string) => {
         // Create a temporary link element
         const link = document.createElement('a');
         link.href = url;
-        link.download = `df_${sessionId?.slice(0, 4)}.db`;
+        link.download = `df_${sessionId?.slice(0, 4) || 'db'}.db`;
         document.body.appendChild(link);    
         
         // Trigger download
@@ -218,7 +221,7 @@ export const DBManagerPane: React.FC<{
     const fetchTables = async () => {
         if (serverConfig.DISABLE_DATABASE) return;
         try {
-            const response = await fetch(getUrls().LIST_TABLES);
+            const response = await fetchWithSession(getUrls().LIST_TABLES, { method: 'GET' }, dispatch);
             const data = await response.json();
             if (data.status === 'success') {
                 setDbTables(data.tables);
@@ -258,10 +261,10 @@ export const DBManagerPane: React.FC<{
     
         try {
             setIsUploading(true);
-            const response = await fetch(getUrls().UPLOAD_DB_FILE, {
+            const response = await fetchWithSession(getUrls().UPLOAD_DB_FILE, {
                 method: 'POST',
                 body: formData
-            });
+            }, dispatch);
             const data = await response.json();
             if (data.status === 'success') {
                 fetchTables();  // Refresh table list
@@ -286,10 +289,10 @@ export const DBManagerPane: React.FC<{
     
         try {
             setIsUploading(true);
-            const response = await fetch(getUrls().CREATE_TABLE, {
+            const response = await fetchWithSession(getUrls().CREATE_TABLE, {
                 method: 'POST',
                 body: formData
-            });
+            }, dispatch);
             const data = await response.json();
             if (data.status === 'success') {
                 if (data.is_renamed) {
@@ -312,9 +315,9 @@ export const DBManagerPane: React.FC<{
 
     const handleDBReset = async () => {
         try {
-            const response = await fetch(getUrls().RESET_DB_FILE, {
+            const response = await fetchWithSession(getUrls().RESET_DB_FILE, {
                 method: 'POST',
-            });
+            }, dispatch);
             const data = await response.json();
             if (data.status === 'success') {
                 fetchTables();
@@ -334,13 +337,13 @@ export const DBManagerPane: React.FC<{
                 let deletedViews = [];
                 for (let view of unreferencedViews) {
                     try {
-                        const response = await fetch(getUrls().DELETE_TABLE, {
+                        const response = await fetchWithSession(getUrls().DELETE_TABLE, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                             },
                             body: JSON.stringify({ table_name: view.name })
-                        });
+                        }, dispatch);
                         const data = await response.json();
                         if (data.status === 'success') {
                             deletedViews.push(view.name);
@@ -367,13 +370,13 @@ export const DBManagerPane: React.FC<{
         }
 
         try {
-            const response = await fetch(getUrls().DELETE_TABLE, {
+            const response = await fetchWithSession(getUrls().DELETE_TABLE, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ table_name: tableName })
-            });
+            }, dispatch);
             const data = await response.json();
             if (data.status === 'success') {
                 fetchTables();
@@ -392,13 +395,13 @@ export const DBManagerPane: React.FC<{
         if (tableAnalysisMap[tableName]) return;
 
         try {
-            const response = await fetch(getUrls().GET_COLUMN_STATS, {
+            const response = await fetchWithSession(getUrls().GET_COLUMN_STATS, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ table_name: tableName })
-            });
+            }, dispatch);
             const data = await response.json();
             if (data.status === 'success') {
                 // Update the analysis map with the new results
@@ -495,7 +498,6 @@ export const DBManagerPane: React.FC<{
         px: 0.5, pt: 1, 
         display: 'flex', 
         flexDirection: 'column', 
-        backgroundColor: alpha(theme.palette.primary.main, 0.02),
         width: '100%'
     }}>
         {/* Recent Data Loaders */}
@@ -503,7 +505,7 @@ export const DBManagerPane: React.FC<{
                 <Typography variant="caption" sx={{
                     color: "text.disabled",
                     fontSize: "0.75rem",
-                    mb: 1,
+                    my: 1,
                     display: 'block'
                 }}>
                     External Data Loaders
@@ -520,21 +522,20 @@ export const DBManagerPane: React.FC<{
                         key="file upload"
                         label="file"
                         size="small"
+                        variant="outlined"
                         onClick={() => setSelectedDataLoader("file upload")}
                         sx={{
                             fontSize: '0.7rem',
                             height: 20,
                             maxWidth: '100%',
-                            backgroundColor: selectedDataLoader === "file upload" ? alpha(theme.palette.secondary.main, 0.2) : 'transparent',
+                            borderColor: selectedDataLoader === "file upload"
+                                ? theme.palette.secondary.main
+                                : theme.palette.divider,
                             '& .MuiChip-label': {
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap'
                             },
-                            '&:hover': {
-                                backgroundColor: alpha(theme.palette.secondary.main, 0.12),
-                                cursor: 'pointer'
-                            }
                         }}
                     />
                     {Object.keys(dataLoaderMetadata ?? {})
@@ -543,28 +544,30 @@ export const DBManagerPane: React.FC<{
                                 key={dataLoaderType}
                                 label={dataLoaderType}
                                 size="small"
+                                variant="outlined"
                                 onClick={() => setSelectedDataLoader(dataLoaderType)}
                                 sx={{
                                     fontSize: '0.7rem',
                                     height: 20,
                                     maxWidth: '100%',
-                                    backgroundColor: selectedDataLoader === dataLoaderType ? alpha(theme.palette.secondary.main, 0.2) : 'transparent',
+                                    backgroundColor: selectedDataLoader === dataLoaderType 
+                                        ? alpha(theme.palette.secondary.main, 0.2) 
+                                        : 'transparent',
+                                    borderColor: selectedDataLoader === dataLoaderType
+                                        ? theme.palette.secondary.main
+                                        : theme.palette.divider,
                                     '& .MuiChip-label': {
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
                                         whiteSpace: 'nowrap'
                                     },
-                                    '&:hover': {
-                                        backgroundColor: alpha(theme.palette.secondary.main, 0.12),
-                                        cursor: 'pointer'
-                                    }
                                 }}
                             />
                         ))}
                 </Box>
             </Box>
         
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, mb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1, my: 1 }}>
             <Typography variant="caption" sx={{
                 color: "text.disabled", 
                 fontWeight: "500", 
@@ -609,17 +612,6 @@ export const DBManagerPane: React.FC<{
                     <RefreshIcon sx={{ fontSize: 16, mr: 1 }} />
                     Refresh table list
                 </MenuItem>
-                <MenuItem 
-                    onClick={() => {
-                        handleCleanDerivedViews();
-                        setTableMenuAnchorEl(null);
-                    }}
-                    disabled={dbTables.filter(t => t.view_source !== null).length === 0}
-                    dense
-                >
-                    <CleaningServicesIcon sx={{ fontSize: 16, mr: 1 }} />
-                    Clean up derived views
-                </MenuItem>
                 <Divider />
                 <MenuItem 
                     onClick={() => {
@@ -635,7 +627,8 @@ export const DBManagerPane: React.FC<{
                 <MenuItem 
                     onClick={() => {
                         if (!isUploading && dbTables.length > 0) {
-                            handleDBDownload(sessionId ?? '')
+                            // fetchWithSession will automatically handle session ID if missing
+                            handleDBDownload(sessionId ?? '', dispatch)
                                 .catch(error => {
                                     console.error('Failed to download database:', error);
                                     setSystemMessage('Failed to download database file', "error");
@@ -735,36 +728,54 @@ export const DBManagerPane: React.FC<{
         {/* Derived Views Section */}
         {dbTables.filter(t => t.view_source !== null).length > 0 && (
             <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column' }}>
-                <Button
-                    variant="text"
-                    size="small"
-                    onClick={() => setShowViews(!showViews)}
-                    sx={{
-                        textTransform: "none",
-                        width: '100%',
-                        justifyContent: 'flex-start',
-                        textAlign: 'left',
-                        borderRadius: 0,
-                        py: 0.5,
-                        px: 2,
-                        color: 'text.secondary',
-                        minWidth: 0,
-                        '&:hover': {
-                            backgroundColor: alpha(theme.palette.primary.main, 0.08)
-                        }
-                    }}
-                    startIcon={showViews ? <ExpandLessIcon sx={{ fontSize: 16 }} /> : <ExpandMoreIcon sx={{ fontSize: 16 }} />}
-                >
-                    <Typography 
-                        fontSize='0.75rem'
+                <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                    <Button
+                        variant="text"
+                        size="small"
+                        onClick={() => setShowViews(!showViews)}
                         sx={{
+                            textTransform: "none",
                             flex: 1,
-                            minWidth: 0,
+                            justifyContent: 'flex-start',
                             textAlign: 'left',
-                        }}>
-                        Views ({dbTables.filter(t => t.view_source !== null).length})
-                    </Typography>
-                </Button>
+                            borderRadius: 0,
+                            py: 0.5,
+                            px: 2,
+                            color: 'text.secondary',
+                            minWidth: 0,
+                            '&:hover': {
+                                backgroundColor: alpha(theme.palette.primary.main, 0.08)
+                            }
+                        }}
+                        startIcon={showViews ? <ExpandLessIcon sx={{ fontSize: 16 }} /> : <ExpandMoreIcon sx={{ fontSize: 16 }} />}
+                    >
+                        <Typography 
+                            fontSize='0.75rem'
+                            sx={{
+                                flex: 1,
+                                minWidth: 0,
+                                textAlign: 'left',
+                            }}>
+                            Views ({dbTables.filter(t => t.view_source !== null).length})
+                        </Typography>
+                    </Button>
+                    <Tooltip title="Clean up unused views">
+                        <IconButton
+                            size="small"
+                            onClick={handleCleanDerivedViews}
+                            disabled={dbTables.filter(t => t.view_source !== null && t.view_source !== undefined && !tables.some(t2 => t2.id === t.name)).length === 0}
+                            sx={{
+                                padding: 0.5,
+                                mr: 0.5,
+                                '&:hover': {
+                                    backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                                }
+                            }}
+                        >
+                            <CleaningServicesIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                    </Tooltip>
+                </Box>
                 <Collapse in={showViews}>
                     <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                         {dbTables.filter(t => t.view_source !== null).map((t, i) => {
@@ -1033,6 +1044,7 @@ export const DBManagerPane: React.FC<{
                         minHeight: 0,
                         height: '100%',
                         position: 'relative',
+                        borderRight: `1px solid ${theme.palette.divider}`,
                         overscrollBehavior: 'contain'
                     }}>
                         {/* Available Tables Section - always visible */}
@@ -1221,7 +1233,7 @@ export const DataLoaderForm: React.FC<{
                     
                     // Import all selected tables sequentially
                     const importPromises = tablesToImport.map(tableName => 
-                        fetch(getUrls().DATA_LOADER_INGEST_DATA, {
+                        fetchWithSession(getUrls().DATA_LOADER_INGEST_DATA, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -1231,7 +1243,7 @@ export const DataLoaderForm: React.FC<{
                                 data_loader_params: params, 
                                 table_name: tableName
                             })
-                        }).then(response => response.json())
+                        }, dispatch).then((response: Response) => response.json())
                     );
                     
                     Promise.all(importPromises)
@@ -1339,7 +1351,7 @@ export const DataLoaderForm: React.FC<{
                                     sx={{textTransform: "none"}}
                                     onClick={() => {
                                         setIsConnecting(true);
-                                        fetch(getUrls().DATA_LOADER_LIST_TABLES, {
+                                        fetchWithSession(getUrls().DATA_LOADER_LIST_TABLES, {
                                             method: 'POST',
                                             headers: {
                                                 'Content-Type': 'application/json',
@@ -1349,8 +1361,8 @@ export const DataLoaderForm: React.FC<{
                                                 data_loader_params: params,
                                                 table_filter: tableFilter.trim() || null
                                             })
-                                    }).then(response => response.json())
-                                    .then(data => {
+                                        }, dispatch).then((response: Response) => response.json())
+                                    .then((data: any) => {
                                         if (data.status === "success") {
                                             console.log(data.tables);
                                             setTableMetadata(Object.fromEntries(data.tables.map((table: any) => {
@@ -1362,7 +1374,7 @@ export const DataLoaderForm: React.FC<{
                                         }
                                         setIsConnecting(false);
                                     })
-                                    .catch(error => {
+                                    .catch((error: any) => {
                                         onFinish("error", `Failed to fetch data loader tables, please check the server is running`);
                                         setIsConnecting(false);
                                     });
@@ -1464,7 +1476,7 @@ export const DataLoaderForm: React.FC<{
                                 sx={{textTransform: "none"}}
                                 onClick={() => {
                                     setIsConnecting(true);
-                                    fetch(getUrls().DATA_LOADER_LIST_TABLES, {
+                                    fetchWithSession(getUrls().DATA_LOADER_LIST_TABLES, {
                                         method: 'POST',
                                         headers: {
                                             'Content-Type': 'application/json',
@@ -1474,8 +1486,8 @@ export const DataLoaderForm: React.FC<{
                                             data_loader_params: params,
                                             table_filter: tableFilter.trim() || null
                                         })
-                                }).then(response => response.json())
-                                .then(data => {
+                                    }, dispatch).then((response: Response) => response.json())
+                                .then((data: any) => {
                                     if (data.status === "success") {
                                         console.log(data.tables);
                                         setTableMetadata(Object.fromEntries(data.tables.map((table: any) => {
@@ -1487,7 +1499,7 @@ export const DataLoaderForm: React.FC<{
                                     }
                                     setIsConnecting(false);
                                 })
-                                .catch(error => {
+                                .catch((error: any) => {
                                     onFinish("error", `Failed to fetch data loader tables, please check the server is running`);
                                     setIsConnecting(false);
                                 });

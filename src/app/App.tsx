@@ -65,16 +65,11 @@ import { AppDispatch } from './store';
 import dfLogo from '../assets/df-logo.png';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import { handleDBDownload } from '../views/DBTableManager';
-import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import { getUrls } from './utils';
-import { UnifiedDataUploadDialog, UploadTabType } from '../views/UnifiedDataUploadDialog';
-import LinkIcon from '@mui/icons-material/Link';
-import ImageSearchIcon from '@mui/icons-material/ImageSearch';
-import ExploreIcon from '@mui/icons-material/Explore';
+import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
 import { AgentRulesDialog } from '../views/AgentRulesDialog';
 import ArticleIcon from '@mui/icons-material/Article';
@@ -221,78 +216,23 @@ export interface AppFCProps {
 
 // Extract menu components into separate components to prevent full app re-renders
 const TableMenu: React.FC = () => {
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const [dialogOpen, setDialogOpen] = useState<boolean>(false);
-    const [initialTab, setInitialTab] = useState<UploadTabType>('menu');
-    const open = Boolean(anchorEl);
-
-    const handleOpenDialog = (tab: UploadTabType) => {
-        setAnchorEl(null);
-        setInitialTab(tab);
-        setDialogOpen(true);
-    };
     
     return (
         <>
             <Button
                 variant="text"
-                onClick={(e) => setAnchorEl(e.currentTarget)}
-                endIcon={<KeyboardArrowDownIcon />}
-                aria-controls={open ? 'add-table-menu' : undefined}
-                aria-haspopup="true"
-                aria-expanded={open ? 'true' : undefined}
+                onClick={() => setDialogOpen(true)}
                 sx={{ textTransform: 'none' }}
             >
                 Data
             </Button>
-            <Menu
-                id="add-table-menu"
-                anchorEl={anchorEl}
-                open={open}
-                onClose={() => setAnchorEl(null)}
-                slotProps={{
-                    paper: { sx: { py: '4px', px: '8px' } }
-                }}
-                aria-labelledby="add-table-button"
-                sx={{ 
-                    '& .MuiMenuItem-root': { padding: '4px 8px' },
-                    '& .MuiTypography-root': { fontSize: 14, display: 'flex', alignItems: 'center', textTransform: 'none', gap: 1 }
-                }}
-            >
-                <MenuItem onClick={() => handleOpenDialog('upload')}>
-                    <Typography fontSize="inherit">
-                        <UploadFileIcon fontSize="inherit" /> upload file <span style={{fontSize: '11px'}}>(csv/json/xlsx)</span>
-                    </Typography>
-                </MenuItem>
-                <MenuItem onClick={() => handleOpenDialog('paste')}>
-                    <Typography fontSize="inherit">
-                        <ContentPasteIcon fontSize="inherit" /> paste data <span style={{fontSize: '11px'}}>(csv/tsv/json)</span>
-                    </Typography>
-                </MenuItem>
-                <Divider />
-                <MenuItem onClick={() => handleOpenDialog('database')}>
-                    <Typography fontSize="inherit">
-                        <CloudQueueIcon fontSize="inherit" /> database
-                    </Typography>
-                </MenuItem>
-                <MenuItem onClick={() => handleOpenDialog('extract')}>
-                    <Typography fontSize="inherit">
-                        <ImageSearchIcon fontSize="inherit" /> extract data <span style={{fontSize: '11px'}}>(image/text)</span>
-                    </Typography>
-                </MenuItem>
-                <Divider />
-                <MenuItem onClick={() => handleOpenDialog('explore')}>
-                    <Typography fontSize="inherit">
-                        <ExploreIcon fontSize="inherit" /> explore samples
-                    </Typography>
-                </MenuItem>
-            </Menu>
             
             {/* Unified Data Upload Dialog */}
             <UnifiedDataUploadDialog 
                 open={dialogOpen}
                 onClose={() => setDialogOpen(false)}
-                initialTab={initialTab}
+                initialTab="menu"
             />
         </>
     );
