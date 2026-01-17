@@ -19,8 +19,11 @@ import {
     Alert,
     Tooltip,
     Link,
+    alpha,
+    useTheme,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { useDispatch, useSelector } from 'react-redux';
 import { AppDispatch } from '../app/store';
 import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
@@ -44,7 +47,7 @@ function TabPanel(props: TabPanelProps) {
             aria-labelledby={`refresh-tab-${index}`}
             {...other}
         >
-            {value === index && <Box sx={{ p: 2 }}>{children}</Box>}
+            {value === index && <Box sx={{ p: 2.5, pt: 3 }}>{children}</Box>}
         </div>
     );
 }
@@ -62,6 +65,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     table,
     onRefreshComplete,
 }) => {
+    const theme = useTheme();
     const dispatch = useDispatch<AppDispatch>();
     const [tabValue, setTabValue] = useState(0);
     const [pasteContent, setPasteContent] = useState('');
@@ -352,115 +356,218 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
             onClose={handleClose}
             maxWidth="md"
             fullWidth
-            sx={{ '& .MuiDialog-paper': { minHeight: 400 } }}
+            sx={{ '& .MuiDialog-paper': { minHeight: 500 } }}
         >
-            <DialogTitle sx={{ display: 'flex', alignItems: 'center' }}>
-                Refresh Data for "{table.displayId || table.id}"
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', pb: 1 }}>
+                <Typography variant="h6" component="span">
+                    Refresh Data for "{table.displayId || table.id}"
+                </Typography>
                 <IconButton
                     sx={{ marginLeft: 'auto' }}
                     size="small"
                     onClick={handleClose}
                 >
-                    <CloseIcon fontSize="inherit" />
+                    <CloseIcon fontSize="small" />
                 </IconButton>
             </DialogTitle>
-            <DialogContent dividers>
-                <Alert severity="info" sx={{ mb: 2, fontSize: 12 }}>
-                    Upload new data to replace the current table content. The new data must have the same columns: <strong>{table.names.join(', ')}</strong>
-                </Alert>
+            <DialogContent sx={{ p: 0 }}>
+                <Box sx={{ px: 3, pt: 2.5, pb: 1.5 }}>
+                    <Typography 
+                        variant="caption" 
+                        sx={{ 
+                            display: 'block',
+                            color: 'text.secondary',
+                            fontSize: '0.75rem',
+                            mb: 2,
+                            lineHeight: 1.5
+                        }}
+                    >
+                        Upload new data to replace the current table content. Required columns: <strong style={{ color: 'inherit' }}>{table.names.join(', ')}</strong>
+                    </Typography>
 
-                {error && (
-                    <Alert severity="error" sx={{ mb: 2, fontSize: 12 }}>
-                        {error}
-                    </Alert>
-                )}
+                    {error && (
+                        <Box 
+                            sx={{ 
+                                mb: 1.5,
+                                p: 1,
+                                backgroundColor: alpha(theme.palette.error.main, 0.08),
+                                borderLeft: `3px solid ${theme.palette.error.main}`,
+                                borderRadius: '4px',
+                            }}
+                        >
+                            <Typography variant="caption" sx={{ color: 'error.main', fontSize: '0.75rem', lineHeight: 1.5 }}>
+                                {error}
+                            </Typography>
+                        </Box>
+                    )}
 
-                {isLoading && <LinearProgress sx={{ mb: 2 }} />}
+                    {isLoading && <LinearProgress sx={{ mb: 2, height: 2 }} />}
+                </Box>
 
-                <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                    <Tab label="Paste Data" sx={{ textTransform: 'none', fontSize: 12 }} />
-                    <Tab label="Upload File" sx={{ textTransform: 'none', fontSize: 12 }} />
-                    <Tab label="From URL" sx={{ textTransform: 'none', fontSize: 12 }} />
+                <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider', px: 3 }}>
+                    <Tab label="Paste Data" sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
+                    <Tab label="Upload File" sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
+                    <Tab label="From URL" sx={{ textTransform: 'none', fontSize: '0.875rem', minHeight: 48 }} />
                 </Tabs>
 
                 <TabPanel value={tabValue} index={0}>
-                    {isOverSizeLimit && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, p: 1, backgroundColor: 'rgba(244, 67, 54, 0.1)', borderRadius: 1 }}>
-                            <Typography variant="caption" sx={{ color: 'error.main' }}>
-                                ⚠️ Content exceeds 2MB size limit.
-                            </Typography>
-                        </Box>
-                    )}
-                    {isLargeContent && !isOverSizeLimit && (
-                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, p: 1, backgroundColor: 'rgba(255, 193, 7, 0.1)', borderRadius: 1 }}>
-                            <Typography variant="caption" sx={{ flex: 1 }}>
-                                Large content detected. {showFullContent ? 'Showing full content' : 'Showing preview'}
-                            </Typography>
-                            <Button size="small" variant="outlined" onClick={toggleFullContent} sx={{ textTransform: 'none' }}>
-                                {showFullContent ? 'Show Preview' : 'Show Full'}
-                            </Button>
-                        </Box>
-                    )}
-                    <TextField
-                        fullWidth
-                        multiline
-                        minRows={8}
-                        maxRows={15}
-                        placeholder="Paste CSV, TSV, or JSON data here..."
-                        value={displayContent}
-                        onChange={handlePasteContentChange}
-                        disabled={isLoading}
-                        sx={{ '& .MuiInputBase-input': { fontSize: 12, fontFamily: 'monospace' } }}
-                    />
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                        {isOverSizeLimit && (
+                            <Box 
+                                sx={{ 
+                                    p: 1,
+                                    backgroundColor: alpha(theme.palette.error.main, 0.06),
+                                    borderLeft: `3px solid ${theme.palette.error.main}`,
+                                    borderRadius: '4px',
+                                }}
+                            >
+                                <Typography variant="caption" sx={{ color: 'error.main', fontSize: '0.75rem', lineHeight: 1.5 }}>
+                                    Content exceeds {(MAX_CONTENT_SIZE / (1024 * 1024)).toFixed(0)}MB limit ({(new Blob([pasteContent]).size / (1024 * 1024)).toFixed(2)}MB)
+                                </Typography>
+                            </Box>
+                        )}
+                        {isLargeContent && !isOverSizeLimit && (
+                            <Box sx={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: 1.5,
+                                p: 1, 
+                                backgroundColor: alpha(theme.palette.text.secondary, 0.04), 
+                                borderRadius: 1,
+                                border: `1px solid ${alpha(theme.palette.divider, 0.5)}`
+                            }}>
+                                <Typography variant="caption" sx={{ flex: 1, fontSize: '0.75rem', color: 'text.secondary' }}>
+                                    Large content ({Math.round(pasteContent.length / 1000)}KB) • {showFullContent ? 'Full view' : 'Preview'}
+                                </Typography>
+                                <Button 
+                                    size="small" 
+                                    variant="text" 
+                                    onClick={toggleFullContent}
+                                    sx={{ 
+                                        textTransform: 'none', 
+                                        minWidth: 'auto', 
+                                        fontSize: '0.75rem',
+                                        color: 'text.secondary',
+                                        '&:hover': {
+                                            backgroundColor: alpha(theme.palette.text.secondary, 0.08),
+                                        }
+                                    }}
+                                >
+                                    {showFullContent ? 'Preview' : 'Full'}
+                                </Button>
+                            </Box>
+                        )}
+                        <TextField
+                            autoFocus
+                            multiline
+                            fullWidth
+                            value={displayContent}
+                            onChange={handlePasteContentChange}
+                            placeholder="Paste your data here (CSV, TSV, or JSON format)"
+                            disabled={isLoading}
+                            sx={{
+                                '& .MuiInputBase-root': {
+                                    minHeight: 240,
+                                    alignItems: 'flex-start',
+                                },
+                                '& .MuiInputBase-input': {
+                                    fontSize: 12,
+                                    fontFamily: 'monospace',
+                                    lineHeight: 1.5,
+                                }
+                            }}
+                        />
+                    </Box>
                 </TabPanel>
 
                 <TabPanel value={tabValue} index={1}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
-                        <Typography variant="body2" color="text.secondary">
-                            Upload a CSV, TSV, JSON, or Excel file
-                        </Typography>
-                        <Input
-                            inputProps={{ accept: '.csv,.tsv,.json,.xlsx,.xls' }}
-                            type="file"
-                            sx={{ display: 'none' }}
-                            inputRef={fileInputRef}
-                            onChange={handleFileUpload}
-                        />
-                        <Tooltip
-                            title={serverConfig.DISABLE_FILE_UPLOAD ? (
-                                <Typography sx={{ fontSize: '11px' }}>
-                                    Install Data Formulator locally to enable file upload.
-                                </Typography>
-                            ) : ""}
-                        >
-                            <span>
-                                <Button
-                                    variant="contained"
-                                    disabled={isLoading || serverConfig.DISABLE_FILE_UPLOAD}
-                                    onClick={() => fileInputRef.current?.click()}
+                    {serverConfig.DISABLE_FILE_UPLOAD ? (
+                        <Box sx={{ textAlign: 'center', py: 6 }}>
+                            <Typography color="text.secondary" sx={{ mb: 1.5, fontSize: '0.875rem' }}>
+                                File upload is disabled in this environment.
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                                Install Data Formulator locally to enable file upload. <br />
+                                <Link 
+                                    href="https://github.com/microsoft/data-formulator" 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    sx={{ fontSize: '0.75rem' }}
                                 >
-                                    Choose File
-                                </Button>
-                            </span>
-                        </Tooltip>
-                    </Box>
+                                    https://github.com/microsoft/data-formulator
+                                </Link>
+                            </Typography>
+                        </Box>
+                    ) : (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <Input
+                                inputProps={{ accept: '.csv,.tsv,.json,.xlsx,.xls' }}
+                                type="file"
+                                sx={{ display: 'none' }}
+                                inputRef={fileInputRef}
+                                onChange={handleFileUpload}
+                            />
+                            <Box
+                                sx={{
+                                    border: '2px dashed',
+                                    borderColor: 'divider',
+                                    borderRadius: 2,
+                                    p: 4,
+                                    textAlign: 'center',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s',
+                                    '&:hover': {
+                                        borderColor: 'primary.main',
+                                        backgroundColor: alpha(theme.palette.primary.main, 0.04),
+                                    }
+                                }}
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                <UploadFileIcon sx={{ fontSize: 40, color: 'text.secondary', mb: 1.5 }} />
+                                <Typography variant="subtitle1" gutterBottom sx={{ fontSize: '0.9375rem', fontWeight: 500 }}>
+                                    Drag & drop file here
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8125rem', mb: 0.5 }}>
+                                    or <Link component="button" sx={{ textDecoration: 'underline', cursor: 'pointer' }}>Browse</Link>
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                                    Supported: CSV, TSV, JSON, Excel (xlsx, xls)
+                                </Typography>
+                            </Box>
+                        </Box>
+                    )}
                 </TabPanel>
 
                 <TabPanel value={tabValue} index={2}>
                     <TextField
                         fullWidth
-                        placeholder="Enter URL to CSV, TSV, or JSON file"
+                        placeholder="Load a CSV, TSV, or JSON file from a URL, e.g. https://example.com/data.json"
                         value={urlContent}
                         onChange={(e) => setUrlContent(e.target.value.trim())}
                         disabled={isLoading}
                         error={urlContent !== '' && !hasValidUrlSuffix}
                         helperText={urlContent !== '' && !hasValidUrlSuffix ? 'URL should link to a .csv, .tsv, or .json file' : ''}
-                        sx={{ '& .MuiInputBase-input': { fontSize: 12 } }}
+                        size="small"
+                        sx={{ 
+                            '& .MuiInputBase-input': {
+                                fontSize: '0.875rem',
+                            },
+                            '& .MuiInputBase-input::placeholder': {
+                                fontSize: '0.875rem',
+                            },
+                            '& .MuiFormHelperText-root': {
+                                fontSize: '0.75rem',
+                            },
+                        }}
                     />
                 </TabPanel>
             </DialogContent>
-            <DialogActions>
-                <Button onClick={handleClose} disabled={isLoading}>
+            <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
+                <Button 
+                    onClick={handleClose} 
+                    disabled={isLoading}
+                    sx={{ textTransform: 'none' }}
+                >
                     Cancel
                 </Button>
                 {tabValue === 0 && (
@@ -468,6 +575,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                         variant="contained"
                         onClick={handlePasteSubmit}
                         disabled={isLoading || !pasteContent.trim() || isOverSizeLimit}
+                        sx={{ textTransform: 'none' }}
                     >
                         Refresh Data
                     </Button>
@@ -477,6 +585,7 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
                         variant="contained"
                         onClick={handleUrlSubmit}
                         disabled={isLoading || !urlContent.trim() || !hasValidUrlSuffix}
+                        sx={{ textTransform: 'none' }}
                     >
                         Refresh Data
                     </Button>
