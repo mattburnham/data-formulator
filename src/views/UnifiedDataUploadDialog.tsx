@@ -9,7 +9,6 @@ import {
     Dialog,
     DialogContent,
     DialogTitle,
-    DialogActions,
     IconButton,
     TextField,
     Typography,
@@ -19,6 +18,7 @@ import {
     Input,
     alpha,
     useTheme,
+    Divider,
 } from '@mui/material';
 
 import CloseIcon from '@mui/icons-material/Close';
@@ -29,14 +29,9 @@ import StorageIcon from '@mui/icons-material/Storage';
 import ImageSearchIcon from '@mui/icons-material/ImageSearch';
 import ExploreIcon from '@mui/icons-material/Explore';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import DeleteIcon from '@mui/icons-material/Delete';
-import AnalyticsIcon from '@mui/icons-material/Analytics';
-import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
-import SearchIcon from '@mui/icons-material/Search';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import Paper from '@mui/material/Paper';
-import CircularProgress from '@mui/material/CircularProgress';
 
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/dfSlice';
@@ -47,8 +42,7 @@ import { DataLoadingChat } from './DataLoadingChat';
 import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
 import { getUrls } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
-import { Type } from '../data/types';
-import { TableStatisticsView, DataLoaderForm, handleDBDownload } from './DBTableManager';
+import { DBManagerPane } from './DBTableManager';
 
 export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore';
 
@@ -137,6 +131,17 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                     {title}
                 </Typography>
+                {onRemoveTable && previewTables && previewTables.length > 0 && (
+                    <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => onRemoveTable(activeIndex)}
+                        sx={{ ml: 'auto' }}
+                        aria-label="Remove table"
+                    >
+                        <DeleteIcon fontSize="small" />
+                    </IconButton>
+                )}
             </Box>
 
             {loading && <LinearProgress />}
@@ -231,16 +236,6 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({
                                         ? ` • ${activeTable.displayId || activeTable.id}`
                                         : ''}
                                 </Typography>
-                                {onRemoveTable && previewTables.length > 1 && (
-                                    <IconButton
-                                        size="small"
-                                        color="error"
-                                        onClick={() => onRemoveTable(activeIndex)}
-                                        sx={{ ml: 'auto' }}
-                                    >
-                                        <DeleteIcon fontSize="small" />
-                                    </IconButton>
-                                )}
                             </Box>
                             <CustomReactTable
                                 rows={activeTable.rows.slice(0, 12)}
@@ -384,14 +379,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [showFullContent, setShowFullContent] = useState<boolean>(false);
     const [isOverSizeLimit, setIsOverSizeLimit] = useState<boolean>(false);
     
-    // URL tab state
+    // URL input state (merged into file upload)
     const [tableURL, setTableURL] = useState<string>("");
-    const [urlPreviewTable, setUrlPreviewTable] = useState<DictTable | null>(null);
-    const [urlPreviewLoading, setUrlPreviewLoading] = useState<boolean>(false);
-    const [urlPreviewError, setUrlPreviewError] = useState<string | null>(null);
-    const [urlPreviewUrl, setUrlPreviewUrl] = useState<string>("");
 
-    // File preview state
+    // File preview state (shared with URL)
     const [filePreviewTables, setFilePreviewTables] = useState<DictTable[] | null>(null);
     const [filePreviewLoading, setFilePreviewLoading] = useState<boolean>(false);
     const [filePreviewError, setFilePreviewError] = useState<string | null>(null);
@@ -412,12 +403,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         }
     }, [initialTab, open]);
 
-    useEffect(() => {
-        if (tableURL !== urlPreviewUrl) {
-            setUrlPreviewTable(null);
-            setUrlPreviewError(null);
-        }
-    }, [tableURL, urlPreviewUrl]);
 
     // Load sample datasets
     useEffect(() => {
@@ -483,10 +468,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setIsOverSizeLimit(false);
         setShowFullContent(false);
         setTableURL("");
-        setUrlPreviewTable(null);
-        setUrlPreviewLoading(false);
-        setUrlPreviewError(null);
-        setUrlPreviewUrl("");
         setFilePreviewTables(null);
         setFilePreviewLoading(false);
         setFilePreviewError(null);
@@ -504,6 +485,8 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             setFilePreviewError(null);
             setFilePreviewTables(null);
             setFilePreviewLoading(true);
+            // Clear URL input when file is uploaded
+            setTableURL("");
 
             const MAX_FILE_SIZE = 5 * 1024 * 1024;
             const previewTables: DictTable[] = [];
@@ -653,19 +636,13 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         }
     };
 
-    // URL submit handler
-    const handleURLSubmit = (): void => {
-        if (urlPreviewTable && urlPreviewUrl === tableURL) {
-            dispatch(dfActions.loadTable(urlPreviewTable));
-            dispatch(fetchFieldSemanticType(urlPreviewTable));
-            handleClose();
-        }
-    };
 
     const handleURLPreview = (): void => {
-        setUrlPreviewLoading(true);
-        setUrlPreviewError(null);
-        setUrlPreviewTable(null);
+        setFilePreviewLoading(true);
+        setFilePreviewError(null);
+        setFilePreviewTables(null);
+        // Clear file preview when URL is loaded
+        setFilePreviewFiles([]);
 
         let parts = tableURL.split('/');
         const baseName = parts[parts.length - 1] || 'dataset';
@@ -686,57 +663,61 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 }
 
                 if (table) {
-                    setUrlPreviewTable(table);
-                    setUrlPreviewUrl(tableURL);
+                    setFilePreviewTables([table]);
                 } else {
-                    setUrlPreviewError('Unable to parse data from the provided URL.');
+                    setFilePreviewError('Unable to parse data from the provided URL.');
                 }
             })
             .catch(() => {
-                setUrlPreviewError('Failed to fetch data from the URL.');
+                setFilePreviewError('Failed to fetch data from the URL.');
             })
             .finally(() => {
-                setUrlPreviewLoading(false);
+                setFilePreviewLoading(false);
             });
     };
 
     const hasValidUrlSuffix = tableURL.endsWith('.csv') || tableURL.endsWith('.tsv') || tableURL.endsWith(".json");
     const hasMultipleFileTables = (filePreviewTables?.length || 0) > 1;
     const showFilePreview = filePreviewLoading || !!filePreviewError || (filePreviewTables && filePreviewTables.length > 0);
-    const showUrlPreview = urlPreviewLoading || !!urlPreviewError || (urlPreviewTable && urlPreviewUrl === tableURL);
     const hasPasteContent = pasteContent.trim() !== '';
 
     // Data source configurations for the menu
-    const dataSourceConfig = [
+    const regularDataSources = [
         { 
             value: 'explore' as UploadTabType, 
             title: 'Sample Datasets', 
             description: 'Explore and load curated example datasets',
             icon: <ExploreIcon />, 
-            disabled: false 
+            disabled: false,
+            disabledReason: undefined
         },
         { 
             value: 'upload' as UploadTabType, 
             title: 'Upload File', 
-            description: 'Upload CSV, TSV, JSON, or Excel files from your computer',
+            description: 'Upload structured data (CSV, TSV, JSON, Excel) from files or URLs',
             icon: <UploadFileIcon />, 
-            disabled: serverConfig.DISABLE_FILE_UPLOAD,
-            disabledReason: 'File upload is disabled in this environment'
+            disabled: false,
+            disabledReason: undefined
         },
         { 
             value: 'paste' as UploadTabType, 
             title: 'Paste Data', 
             description: 'Paste tabular data directly from clipboard',
             icon: <ContentPasteIcon />, 
-            disabled: false 
+            disabled: false,
+            disabledReason: undefined
         },
         { 
-            value: 'url' as UploadTabType, 
-            title: 'From URL', 
-            description: 'Load data from a web URL (CSV, TSV, or JSON)',
-            icon: <LinkIcon />, 
-            disabled: false 
+            value: 'extract' as UploadTabType, 
+            title: 'Extract from Documents', 
+            description: 'Extract tables from images, PDFs, or documents using AI',
+            icon: <ImageSearchIcon />, 
+            disabled: false,
+            disabledReason: undefined
         },
+    ];
+
+    const databaseDataSources = [
         { 
             value: 'database' as UploadTabType, 
             title: 'Database', 
@@ -745,14 +726,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             disabled: serverConfig.DISABLE_DATABASE,
             disabledReason: 'Database connection is disabled in this environment'
         },
-        { 
-            value: 'extract' as UploadTabType, 
-            title: 'Extract from Documents', 
-            description: 'Extract tables from images, PDFs, or documents using AI',
-            icon: <ImageSearchIcon />, 
-            disabled: false 
-        },
     ];
+
+    // Combined config for finding tab titles
+    const dataSourceConfig = [...regularDataSources, ...databaseDataSources];
 
     // Get current tab title for header
     const getCurrentTabTitle = () => {
@@ -769,7 +746,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 '& .MuiDialog-paper': { 
                     width: 1100,
                     maxWidth: '95vw',
-                    height: 700, 
+                    height: 600, 
                     maxHeight: '90vh',
                     display: 'flex',
                     flexDirection: 'column',
@@ -824,21 +801,50 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         <Box sx={{ 
                             width: '100%',
                             maxWidth: 860,
-                            display: 'grid', 
-                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                            gap: 1.5,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 2,
                         }}>
-                            {dataSourceConfig.map((source) => (
-                                <DataSourceCard
-                                    key={source.value}
-                                    icon={source.icon}
-                                    title={source.title}
-                                    description={source.description}
-                                    onClick={() => setActiveTab(source.value)}
-                                    disabled={source.disabled}
-                                    disabledReason={source.disabledReason}
-                                />
-                            ))}
+                            {/* Regular Data Sources Group */}
+                            <Box sx={{ 
+                                display: 'grid', 
+                                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                                gap: 1.5,
+                            }}>
+                                {regularDataSources.map((source) => (
+                                    <DataSourceCard
+                                        key={source.value}
+                                        icon={source.icon}
+                                        title={source.title}
+                                        description={source.description}
+                                        onClick={() => setActiveTab(source.value)}
+                                        disabled={source.disabled}
+                                        disabledReason={source.disabledReason}
+                                    />
+                                ))}
+                            </Box>
+
+                            {/* Divider */}
+                            <Divider sx={{ my: 1 }} />
+
+                            {/* Database Data Sources Group */}
+                            <Box sx={{ 
+                                display: 'grid', 
+                                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                                gap: 1.5,
+                            }}>
+                                {databaseDataSources.map((source) => (
+                                    <DataSourceCard
+                                        key={source.value}
+                                        icon={source.icon}
+                                        title={source.title}
+                                        description={source.description}
+                                        onClick={() => setActiveTab(source.value)}
+                                        disabled={source.disabled}
+                                        disabledReason={source.disabledReason}
+                                    />
+                                ))}
+                            </Box>
                         </Box>
                     </Box>
                 </TabPanel>
@@ -852,9 +858,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         boxSizing: 'border-box',
                         gap: 2,
                         p: 2,
-                        justifyContent: 'center',
+                        justifyContent: showFilePreview ? 'flex-start' : 'center',
                     }}>
-                        <Box sx={{ width: '100%', maxWidth: 760, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <Box sx={{ width: '100%', maxWidth: showFilePreview ? '100%' : 760, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <Input
                             inputProps={{ 
                                 accept: '.csv,.tsv,.json,.xlsx,.xls',
@@ -883,32 +889,79 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 </Typography>
                             </Box>
                         ) : (
-                            <Box
-                                sx={{
-                                    border: '2px dashed',
-                                    borderColor: 'divider',
-                                    borderRadius: 2,
-                                    p: 3,
-                                    textAlign: 'center',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s',
-                                    '&:hover': {
-                                        borderColor: 'primary.main',
-                                        backgroundColor: alpha(theme.palette.primary.main, 0.04),
-                                    }
-                                }}
-                                onClick={() => fileInputRef.current?.click()}
-                            >
-                                <UploadFileIcon sx={{ fontSize: 36, color: 'text.secondary', mb: 1 }} />
-                                <Typography variant="subtitle1" gutterBottom>
-                                    Click to upload or drag and drop
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                    Supported formats: CSV, TSV, JSON, Excel (xlsx, xls)
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                    Maximum file size: 5MB (use Database tab for larger files)
-                                </Typography>
+                            <Box sx={{ 
+                                display: 'flex', 
+                                flexDirection: showFilePreview ? 'row' : 'column',
+                                gap: 2,
+                                alignItems: showFilePreview ? 'flex-start' : 'stretch',
+                            }}>
+                                <Box
+                                    sx={{
+                                        border: '2px dashed',
+                                        borderColor: 'divider',
+                                        borderRadius: 2,
+                                        p: showFilePreview ? 2 : 3,
+                                        textAlign: 'center',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                        flex: showFilePreview ? '0 0 45%' : '1',
+                                        minWidth: showFilePreview ? 0 : 'auto',
+                                        '&:hover': {
+                                            borderColor: 'primary.main',
+                                            backgroundColor: alpha(theme.palette.primary.main, 0.04),
+                                        }
+                                    }}
+                                    onClick={() => fileInputRef.current?.click()}
+                                >
+                                    <UploadFileIcon sx={{ fontSize: showFilePreview ? 28 : 36, color: 'text.secondary', mb: 1 }} />
+                                    <Typography variant={showFilePreview ? "body2" : "subtitle1"} gutterBottom>
+                                        Drag & drop file here
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: showFilePreview ? '0.75rem' : '0.875rem' }}>
+                                        or <Link component="button" sx={{ textDecoration: 'underline', cursor: 'pointer' }}>Browse</Link>
+                                    </Typography>
+                                    {!showFilePreview && (
+                                        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                            Supported: CSV, TSV, JSON, Excel (xlsx, xls)
+                                        </Typography>
+                                    )}
+                                </Box>
+
+                                {/* URL Input Section */}
+                                <Box sx={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    gap: 1,
+                                    flex: showFilePreview ? '1' : '0 0 auto',
+                                    minWidth: showFilePreview ? 0 : 'auto',
+                                }}>
+                                    <TextField
+                                        fullWidth
+                                        placeholder="Load a CSV, TSV, or JSON file from a URL, e.g. https://example.com/data.json"
+                                        value={tableURL}
+                                        onChange={(e) => setTableURL(e.target.value.trim())}
+                                        error={tableURL !== "" && !hasValidUrlSuffix}
+                                        size="small"
+                                        sx={{ 
+                                            flex: 1,
+                                            '& .MuiInputBase-input': {
+                                                fontSize: '0.75rem',
+                                            },
+                                            '& .MuiInputBase-input::placeholder': {
+                                                fontSize: '0.75rem',
+                                            },
+                                        }}
+                                    />
+                                    <Button
+                                        variant="outlined"
+                                        size="small"
+                                        onClick={handleURLPreview}
+                                        disabled={!hasValidUrlSuffix || filePreviewLoading}
+                                        sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+                                    >
+                                        Preview
+                                    </Button>
+                                </Box>
                             </Box>
                         )}
 
@@ -933,81 +986,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     disabled={serverConfig.DISABLE_FILE_UPLOAD || filePreviewLoading}
                                     sx={{ textTransform: 'none' }}
                                 >
-                                    {hasMultipleFileTables ? 'Load Files' : 'Load File'}
+                                    {hasMultipleFileTables ? 'Load Tables' : 'Load Table'}
                                 </Button>
                             </Box>
                         )}
-                        </Box>
-                    </Box>
-                </TabPanel>
-
-                {/* URL Tab */}
-                <TabPanel value={activeTab} index="url">
-                    <Box sx={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        height: '100%',
-                        boxSizing: 'border-box',
-                        gap: 2,
-                        p: 2,
-                        justifyContent: 'center',
-                    }}>
-                        <Box sx={{ width: '100%', maxWidth: 760, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <TextField
-                                    fullWidth
-                                    label="Data URL"
-                                    placeholder="https://example.com/data.csv"
-                                    value={tableURL}
-                                    onChange={(e) => setTableURL(e.target.value.trim())}
-                                    error={tableURL !== "" && !hasValidUrlSuffix}
-                                    size="small"
-                                />
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={handleURLPreview}
-                                    disabled={!hasValidUrlSuffix || urlPreviewLoading}
-                                    sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
-                                >
-                                    Preview
-                                </Button>
-                            </Box>
-
-                            {tableURL !== "" && !hasValidUrlSuffix && (
-                                <Typography variant="caption" color="error">
-                                    URL should link to a .csv, .tsv, or .json file.
-                                </Typography>
-                            )}
-
-                            <Typography variant="caption" color="text.secondary">
-                                Supported URLs: direct links to .csv, .tsv, or .json files.
-                            </Typography>
-
-                            {showUrlPreview && (
-                                <PreviewPanel
-                                    title="Preview"
-                                    loading={urlPreviewLoading}
-                                    error={urlPreviewError}
-                                    table={urlPreviewUrl === tableURL ? urlPreviewTable : null}
-                                    emptyLabel="Click Preview to fetch a sample."
-                                    meta={urlPreviewTable && urlPreviewUrl === tableURL ? `${urlPreviewTable.rows.length} rows × ${urlPreviewTable.names.length} columns` : undefined}
-                                />
-                            )}
-
-                            {urlPreviewTable && urlPreviewUrl === tableURL && (
-                                <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
-                                    <Button
-                                        variant="contained"
-                                        size="small"
-                                        onClick={handleURLSubmit}
-                                        disabled={!hasValidUrlSuffix}
-                                        sx={{ textTransform: 'none' }}
-                                    >
-                                        Load from URL
-                                    </Button>
-                                </Box>
-                            )}
                         </Box>
                     </Box>
                 </TabPanel>
@@ -1121,7 +1103,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             </Typography>
                         </Box>
                     ) : (
-                        <DatabaseTabContent onClose={handleClose} />
+                        <DBManagerPane />
                     )}
                 </TabPanel>
 
@@ -1161,561 +1143,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 </TabPanel>
             </DialogContent>
         </Dialog>
-    );
-};
-
-interface DBTable {
-    name: string;
-    columns: { name: string; type: string; }[];
-    row_count: number;
-    sample_rows: any[];
-    view_source: string | null;
-}
-
-interface ColumnStatistics {
-    column: string;
-    type: string;
-    statistics: {
-        count: number;
-        unique_count: number;
-        null_count: number;
-        min?: number;
-        max?: number;
-        avg?: number;
-    };
-}
-
-// Separate component for Database tab content
-const DatabaseTabContent: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const theme = useTheme();
-    const dispatch = useDispatch<AppDispatch>();
-    const sessionId = useSelector((state: DataFormulatorState) => state.sessionId);
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
-    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
-
-    const [dbTables, setDbTables] = React.useState<DBTable[]>([]);
-    const [selectedTabKey, setSelectedTabKey] = React.useState("");
-    const [isUploading, setIsUploading] = React.useState<boolean>(false);
-    const [tableAnalysisMap, setTableAnalysisMap] = React.useState<Record<string, ColumnStatistics[] | null>>({});
-    const [dataLoaderMetadata, setDataLoaderMetadata] = React.useState<Record<string, {
-        params: {name: string, default: string, type: string, required: boolean, description: string}[], 
-        auth_instructions: string}>>({});
-
-    const setSystemMessage = (content: string, severity: "error" | "warning" | "info" | "success") => {
-        dispatch(dfActions.addMessages({
-            "timestamp": Date.now(),
-            "component": "DB manager",
-            "type": severity,
-            "value": content
-        }));
-    };
-
-    React.useEffect(() => {
-        fetchTables();
-        fetchDataLoaders();
-    }, []);
-
-    React.useEffect(() => {
-        if (!selectedTabKey.startsWith("dataLoader:") && dbTables.length == 0) {
-            setSelectedTabKey("");
-        } else if (!selectedTabKey.startsWith("dataLoader:") && dbTables.find(t => t.name === selectedTabKey) == undefined) {
-            if (dbTables.length > 0) {
-                setSelectedTabKey(dbTables[0].name);
-            }
-        }
-    }, [dbTables]);
-
-    const fetchTables = async () => {
-        if (serverConfig.DISABLE_DATABASE) return;
-        try {
-            const response = await fetch(getUrls().LIST_TABLES);
-            const data = await response.json();
-            if (data.status === 'success') {
-                setDbTables(data.tables);
-            }
-        } catch (error) {
-            setSystemMessage('Failed to fetch tables, please check if the server is running', "error");
-        }
-    };
-
-    const fetchDataLoaders = async () => {
-        fetch(getUrls().DATA_LOADER_LIST_DATA_LOADERS, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === "success") {
-                setDataLoaderMetadata(data.data_loaders);
-            }
-        })
-        .catch(error => {
-            console.error('Failed to fetch data loader params:', error);
-        });
-    };
-
-    const handleDBFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-    
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('table_name', file.name.split('.')[0]);
-    
-        try {
-            setIsUploading(true);
-            const response = await fetch(getUrls().CREATE_TABLE, {
-                method: 'POST',
-                body: formData
-            });
-            const data = await response.json();
-            if (data.status === 'success') {
-                if (data.is_renamed) {
-                    setSystemMessage(`Table ${data.original_name} already exists. Renamed to ${data.table_name}`, "warning");
-                } 
-                fetchTables();
-            } else {
-                setSystemMessage(data.error || 'Failed to upload table', "error");
-            }
-        } catch (error) {
-            setSystemMessage('Failed to upload table, please check if the server is running', "error");
-        } finally {
-            setIsUploading(false);
-            if (event.target) {
-                event.target.value = '';
-            }
-        }
-    };
-
-    const handleDropTable = async (tableName: string) => {
-        if (tables.some(t => t.id === tableName)) {
-            if (!confirm(`Are you sure you want to delete ${tableName}? \n ${tableName} is currently loaded and will be removed from the database.`)) return;
-        }
-
-        try {
-            const response = await fetch(getUrls().DELETE_TABLE, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ table_name: tableName })
-            });
-            const data = await response.json();
-            if (data.status === 'success') {
-                fetchTables();
-                setSelectedTabKey(dbTables.length > 0 ? dbTables[0].name : "");
-            } else {
-                setSystemMessage(data.error || 'Failed to delete table', "error");
-            }
-        } catch (error) {
-            setSystemMessage('Failed to delete table, please check if the server is running', "error");
-        }
-    };
-
-    const handleAnalyzeData = async (tableName: string) => {
-        if (!tableName) return;
-        if (tableAnalysisMap[tableName]) return;
-        
-        try {
-            const response = await fetch(getUrls().GET_COLUMN_STATS, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ table_name: tableName })
-            });
-            const data = await response.json();
-            if (data.status === 'success') {
-                setTableAnalysisMap(prevMap => ({
-                    ...prevMap,
-                    [tableName]: data.statistics
-                }));
-            }
-        } catch (error) {
-            setSystemMessage('Failed to analyze table data', "error");
-        }
-    };
-
-    const toggleAnalysisView = (tableName: string) => {
-        if (tableAnalysisMap[tableName]) {
-            setTableAnalysisMap(prevMap => {
-                const newMap = { ...prevMap };
-                delete newMap[tableName];
-                return newMap;
-            });
-        } else {
-            handleAnalyzeData(tableName);
-        }
-    };
-
-    const handleAddTableToDF = (dbTable: DBTable) => {
-        const convertSqlTypeToAppType = (sqlType: string): Type => {
-            sqlType = sqlType.toUpperCase();
-            if (sqlType.includes('INT') || sqlType === 'BIGINT' || sqlType === 'SMALLINT' || sqlType === 'TINYINT') {
-                return Type.Integer;
-            } else if (sqlType.includes('FLOAT') || sqlType.includes('DOUBLE') || sqlType.includes('DECIMAL') || sqlType.includes('NUMERIC') || sqlType.includes('REAL')) {
-                return Type.Number;
-            } else if (sqlType.includes('BOOL')) {
-                return Type.Boolean;
-            } else if (sqlType.includes('DATE') || sqlType.includes('TIME') || sqlType.includes('TIMESTAMP')) {
-                return Type.Date;
-            } else {
-                return Type.String;
-            }
-        };
-
-        let table: DictTable = {
-            id: dbTable.name,
-            displayId: dbTable.name,
-            names: dbTable.columns.map((col: any) => col.name),
-            metadata: dbTable.columns.reduce((acc: Record<string, {type: Type, semanticType: string, levels: any[]}>, col: any) => ({
-                ...acc,
-                [col.name]: {
-                    type: convertSqlTypeToAppType(col.type),
-                    semanticType: "",
-                    levels: []
-                }
-            }), {}),
-            rows: dbTable.sample_rows,
-            virtual: {
-                tableId: dbTable.name,
-                rowCount: dbTable.row_count,
-            },
-            anchored: true,
-            createdBy: 'user',
-            attachedMetadata: ''
-        }
-        dispatch(dfActions.loadTable(table));
-        dispatch(fetchFieldSemanticType(table));
-        onClose();
-    };
-
-    const handleCleanDerivedViews = async () => {
-        let unreferencedViews = dbTables.filter(t => t.view_source !== null && t.view_source !== undefined && !tables.some(t2 => t2.id === t.name));
-
-        if (unreferencedViews.length > 0) {
-            if (confirm(`Are you sure you want to delete the following unreferenced derived views? \n${unreferencedViews.map(v => `- ${v.name}`).join("\n")}`)) {
-                let deletedViews = [];
-                for (let view of unreferencedViews) {
-                    try {
-                        const response = await fetch(getUrls().DELETE_TABLE, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ table_name: view.name })
-                        });
-                        const data = await response.json();
-                        if (data.status === 'success') {
-                            deletedViews.push(view.name);
-                        }
-                    } catch (error) {
-                        setSystemMessage('Failed to delete table', "error");
-                    }
-                }
-                if (deletedViews.length > 0) {
-                    setSystemMessage(`Deleted ${deletedViews.length} unreferenced derived views`, "success");
-                }
-                fetchTables();
-            }
-        }
-    };
-
-    const handleDBReset = async () => {
-        try {
-            const response = await fetch(getUrls().RESET_DB_FILE, { method: 'POST' });
-            const data = await response.json();
-            if (data.status === 'success') {
-                fetchTables();
-            } else {
-                setSystemMessage(data.error || 'Failed to reset database', "error");
-            }
-        } catch (error) {
-            setSystemMessage('Failed to reset database', "error");
-        }
-    };
-
-    const handleDBUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-    
-        const formData = new FormData();
-        formData.append('file', file);
-    
-        try {
-            setIsUploading(true);
-            const response = await fetch(getUrls().UPLOAD_DB_FILE, {
-                method: 'POST',
-                body: formData
-            });
-            const data = await response.json();
-            if (data.status === 'success') {
-                fetchTables();
-            } else {
-                setSystemMessage(data.error || 'Failed to upload database', "error");
-            }
-        } catch (error) {
-            setSystemMessage('Failed to upload database', "error");
-        } finally {
-            setIsUploading(false);
-        }
-    };
-
-    const hasDerivedViews = dbTables.filter(t => t.view_source !== null).length > 0;
-
-    const dataLoaderPanel = (
-        <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', backgroundColor: alpha(theme.palette.secondary.main, 0.02) }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', px: 1, mb: 1 }}>
-                <Typography variant="caption" sx={{ color: "text.disabled", fontWeight: "500", flexGrow: 1, fontSize: "0.75rem" }}>
-                    Data Connectors
-                </Typography>
-            </Box>
-            
-            {["file upload", ...Object.keys(dataLoaderMetadata ?? {})].map((dataLoaderType) => (
-                <Button
-                    key={`dataLoader:${dataLoaderType}`}
-                    variant="text"
-                    size="small"
-                    onClick={() => setSelectedTabKey('dataLoader:' + dataLoaderType)}
-                    color='secondary'
-                    sx={{
-                        textTransform: "none",
-                        width: 120,
-                        justifyContent: 'flex-start',
-                        textAlign: 'left',
-                        borderRadius: 0,
-                        py: 0.5,
-                        px: 2,
-                        color: selectedTabKey === 'dataLoader:' + dataLoaderType ? 'secondary.main' : 'text.secondary',
-                        borderRight: selectedTabKey === 'dataLoader:' + dataLoaderType ? 2 : 0,
-                        borderColor: 'secondary.main',
-                    }}
-                >
-                    <Typography fontSize='inherit' sx={{ textTransform: "none", width: "calc(100% - 4px)", textAlign: 'left', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        {dataLoaderType}
-                    </Typography>
-                </Button>
-            ))}
-        </Box>
-    );
-
-    const tableSelectionPanel = (
-        <Box sx={{ px: 0.5, pt: 1, display: 'flex', flexDirection: 'column', backgroundColor: alpha(theme.palette.primary.main, 0.02) }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', px: 1, mb: 1 }}>
-                <Typography variant="caption" sx={{ color: "text.disabled", fontWeight: "500", flexGrow: 1, fontSize: "0.75rem" }}>
-                    Data Tables
-                </Typography>
-                <Tooltip title="refresh the table list">
-                    <IconButton size="small" color="primary" sx={{ '&:hover': { transform: 'rotate(180deg)' }, transition: 'transform 0.3s ease-in-out' }} onClick={fetchTables}>
-                        <RefreshIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                </Tooltip>
-            </Box>
-            
-            {dbTables.length == 0 && 
-                <Typography variant="caption" sx={{ color: "lightgray", px: 2, py: 0.5, fontStyle: "italic" }}>
-                    no tables available
-                </Typography>
-            }
-            
-            {dbTables.filter(t => t.view_source === null).map((t) => (
-                <Button
-                    key={t.name}
-                    variant="text"
-                    size="small"
-                    color='primary'
-                    onClick={() => setSelectedTabKey(t.name)}
-                    sx={{
-                        textTransform: "none",
-                        width: 160,
-                        justifyContent: 'flex-start',
-                        textAlign: 'left',
-                        borderRadius: 0,
-                        py: 0.5,
-                        px: 2,
-                        color: selectedTabKey === t.name ? 'primary.main' : 'text.secondary',
-                        borderRight: selectedTabKey === t.name ? 2 : 0,
-                    }}
-                >
-                    <Typography fontSize='inherit' sx={{ width: "calc(100% - 4px)", textAlign: 'left', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        {t.name}
-                    </Typography>
-                </Button>
-            ))}
-            
-            {hasDerivedViews && (
-                <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', px: 1, mb: 1 }}>
-                        <Typography variant="caption" sx={{ color: "text.disabled", fontWeight: "500", flexGrow: 1, fontSize: "0.75rem" }}>
-                            Derived Views
-                        </Typography>
-                        <Tooltip title="clean up unreferenced derived views">
-                            <IconButton size="small" color="primary" disabled={dbTables.filter(t => t.view_source !== null).length === 0} onClick={handleCleanDerivedViews}>
-                                <CleaningServicesIcon sx={{ fontSize: 14 }} />
-                            </IconButton>
-                        </Tooltip>
-                    </Box>
-                    
-                    {dbTables.filter(t => t.view_source !== null).map((t) => (
-                        <Button
-                            key={t.name}
-                            variant="text"
-                            size="small"
-                            onClick={() => setSelectedTabKey(t.name)}
-                            sx={{
-                                textTransform: "none",
-                                width: 160,
-                                justifyContent: 'flex-start',
-                                textAlign: 'left',
-                                borderRadius: 0,
-                                py: 0.5,
-                                px: 2,
-                                color: selectedTabKey === t.name ? 'primary.main' : 'text.secondary',
-                                borderRight: selectedTabKey === t.name ? 2 : 0,
-                            }}
-                        >
-                            <Typography fontSize='inherit' sx={{ width: "calc(100% - 4px)", textAlign: 'left', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                                {t.name}
-                            </Typography>
-                        </Button>
-                    ))}
-                </Box>
-            )}
-        </Box>
-    );
-
-    const tableView = (
-        <Box sx={{ flex: 1, minWidth: 0, overflow: 'auto', p: 2 }}>
-            {selectedTabKey === '' && (
-                <Typography variant="caption" sx={{ color: "text.secondary", px: 1 }}>
-                    The database is empty, refresh the table list or import some data to get started.
-                </Typography>
-            )}
-            
-            {selectedTabKey === 'dataLoader:file upload' && (
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 4 }}>
-                    <Tooltip title="upload a csv/xlsx file to the local database">
-                        <Button variant="outlined" component="label" disabled={isUploading}>
-                            <UploadFileIcon sx={{ mr: 1 }} />
-                            {isUploading ? 'Uploading...' : 'Upload CSV/XLSX to Database'}
-                            <input type="file" hidden onChange={handleDBFileUpload} accept=".csv,.xlsx,.json" disabled={isUploading} />
-                        </Button>
-                    </Tooltip>
-                    <Typography variant="caption" color="text.secondary">
-                        Files uploaded here are stored in the database and can handle larger datasets
-                    </Typography>
-                </Box>
-            )}
-            
-            {dataLoaderMetadata && Object.entries(dataLoaderMetadata).map(([dataLoaderType, metadata]) => (
-                selectedTabKey === 'dataLoader:' + dataLoaderType && (
-                    <Box key={`dataLoader:${dataLoaderType}`} sx={{ position: "relative", maxWidth: '100%' }}>
-                        <DataLoaderForm 
-                            key={`data-loader-form-${dataLoaderType}`}
-                            dataLoaderType={dataLoaderType} 
-                            paramDefs={metadata.params}
-                            authInstructions={metadata.auth_instructions}
-                            onImport={() => setIsUploading(true)} 
-                            onFinish={(status, message, importedTables) => {
-                                setIsUploading(false);
-                                fetchTables().then(() => {
-                                    if (status === "success" && importedTables && importedTables.length > 0) {
-                                        setSelectedTabKey(importedTables[0]);
-                                    }
-                                });
-                                if (status === "error") {
-                                    setSystemMessage(message, "error");
-                                }
-                            }} 
-                        />
-                    </Box>
-                )
-            ))}
-            
-            {dbTables.map((t) => {
-                if (selectedTabKey !== t.name) return null;
-                
-                const showingAnalysis = tableAnalysisMap[t.name] !== undefined;
-                return (
-                    <Box key={t.name} sx={{ maxWidth: '100%', overflowX: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        <Paper variant="outlined">
-                            <Box sx={{ px: 1, display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
-                                <Typography variant="caption">
-                                    {showingAnalysis ? "column stats for " : "sample data from "} 
-                                    <Typography component="span" sx={{ fontSize: 12, fontWeight: "bold" }}>{t.name}</Typography>
-                                    <Typography component="span" sx={{ ml: 1, fontSize: 10, color: "text.secondary" }}>
-                                        ({t.columns.length} columns × {t.row_count} rows)
-                                    </Typography>
-                                </Typography>
-                                <Box sx={{ marginLeft: 'auto', display: 'flex', gap: 1 }}>
-                                    <Button 
-                                        size="small"
-                                        color={showingAnalysis ? "secondary" : "primary"}
-                                        onClick={() => toggleAnalysisView(t.name)}
-                                        startIcon={<AnalyticsIcon fontSize="small" />}
-                                        sx={{ textTransform: "none" }}
-                                    >
-                                        {showingAnalysis ? "show data samples" : "show column stats"}
-                                    </Button>
-                                    <IconButton size="small" color="error" onClick={() => handleDropTable(t.name)} title="Drop Table">
-                                        <DeleteIcon fontSize="small" />
-                                    </IconButton>
-                                </Box>
-                            </Box>
-                            {showingAnalysis ? (
-                                <TableStatisticsView tableName={t.name} columnStats={tableAnalysisMap[t.name] ?? []} />
-                            ) : (
-                                <CustomReactTable 
-                                    rows={t.sample_rows.map((row: any) => Object.fromEntries(Object.entries(row).map(([key, value]: [string, any]) => [key, String(value)]))).slice(0, 9)} 
-                                    columnDefs={t.columns.map(col => ({ id: col.name, label: col.name, minWidth: 60 }))}
-                                    rowsPerPageNum={-1}
-                                    compact={false}
-                                    isIncompleteTable={t.row_count > 10}
-                                />
-                            )}
-                        </Paper>
-                        <Button 
-                            variant="contained"
-                            size="small"
-                            sx={{ ml: 'auto' }}
-                            disabled={isUploading}
-                            onClick={() => handleAddTableToDF(t)}
-                        >
-                            Load Table
-                        </Button>
-                    </Box>
-                );
-            })}
-        </Box>
-    );
-
-    return (
-        <Box sx={{ display: 'flex', flexDirection: 'row', height: '100%', position: 'relative' }}>
-            {isUploading && (
-                <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255, 255, 255, 0.7)', zIndex: 1000 }}>
-                    <CircularProgress size={40} />
-                </Box>
-            )}
-            <Box sx={{ display: 'flex', flexDirection: 'column', borderRight: 1, borderColor: 'divider' }}>
-                <Box sx={{ minWidth: 180, display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', overflowY: 'auto', flexGrow: 1 }}>
-                    {dataLoaderPanel}
-                    {tableSelectionPanel}
-                </Box>
-                <Typography variant="caption" sx={{ mr: 'auto', mt: 'auto', mb: 1, px: 1, textWrap: 'wrap', '& .MuiButton-root': { minWidth: 'auto', textTransform: "none" } }}>
-                    <Tooltip title="import a duckdb .db file">
-                        <Button variant="text" size="small" component="label" disabled={isUploading}>
-                            Import
-                            <input type="file" hidden onChange={handleDBUpload} accept=".db" disabled={isUploading} />
-                        </Button>
-                    </Tooltip>
-                    ,
-                    <Tooltip title="save database to .db file">
-                        <Button variant="text" size="small" onClick={() => handleDBDownload(sessionId ?? '')} disabled={isUploading || dbTables.length === 0}>
-                            Export
-                        </Button>
-                    </Tooltip>
-                    or
-                    <Button variant="text" size="small" color="warning" onClick={handleDBReset} disabled={isUploading}>
-                        Reset
-                    </Button>
-                </Typography>
-            </Box>
-            {tableView}
-        </Box>
     );
 };
 

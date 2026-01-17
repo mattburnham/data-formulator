@@ -269,11 +269,6 @@ const TableMenu: React.FC = () => {
                         <ContentPasteIcon fontSize="inherit" /> paste data <span style={{fontSize: '11px'}}>(csv/tsv/json)</span>
                     </Typography>
                 </MenuItem>
-                <MenuItem onClick={() => handleOpenDialog('url')}>
-                    <Typography fontSize="inherit">
-                        <LinkIcon fontSize="inherit" /> from URL
-                    </Typography>
-                </MenuItem>
                 <Divider />
                 <MenuItem onClick={() => handleOpenDialog('database')}>
                     <Typography fontSize="inherit">
