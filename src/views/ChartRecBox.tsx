@@ -69,111 +69,6 @@ export interface ChartRecBoxProps {
     sx?: SxProps;
 }
 
-// Table selector component for ChartRecBox
-const NLTableSelector: FC<{
-    selectedTableIds: string[],
-    tables: DictTable[],
-    updateSelectedTableIds: (tableIds: string[]) => void,
-    requiredTableIds?: string[]
-}> = ({ selectedTableIds, tables, updateSelectedTableIds, requiredTableIds = [] }) => {
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const open = Boolean(anchorEl);
-
-    const handleClick = (event: React.MouseEvent<HTMLElement>) => {
-        setAnchorEl(event.currentTarget);
-    };
-
-    const handleClose = () => {
-        setAnchorEl(null);
-    };
-
-    const handleTableSelect = (table: DictTable) => {
-        if (!selectedTableIds.includes(table.id)) {
-            updateSelectedTableIds([...selectedTableIds, table.id]);
-        }
-        handleClose();
-    };
-
-    return (
-        <Box sx={{ 
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '2px',
-            padding: '4px',
-            marginBottom: 0.5,
-        }}>
-            {selectedTableIds.map((tableId) => {
-                const isRequired = requiredTableIds.includes(tableId);
-                return (
-                    <Chip
-                        key={tableId}
-                        label={tables.find(t => t.id == tableId)?.displayId}
-                        size="small"
-                        sx={{
-                            height: 16,
-                            fontSize: '10px',
-                            borderRadius: '2px',
-                            bgcolor: isRequired ? 'rgba(25, 118, 210, 0.2)' : 'rgba(25, 118, 210, 0.1)',
-                            color: 'rgba(0, 0, 0, 0.7)',
-                            '& .MuiChip-label': {
-                                pl: '4px',
-                                pr: '6px'
-                            }
-                        }}
-                        deleteIcon={isRequired ? undefined : <CloseIcon sx={{ fontSize: '8px', width: '12px', height: '12px' }} />}
-                        onDelete={isRequired ? undefined : () => updateSelectedTableIds(selectedTableIds.filter(id => id !== tableId))}
-                    />
-                );
-            })}
-            <Tooltip title="select tables for data formulation">
-                <IconButton
-                    size="small"
-                    onClick={handleClick}
-                    sx={{ 
-                        width: 16,
-                        height: 16,
-                        fontSize: '10px',
-                        padding: 0
-                    }}
-                >
-                    <AddIcon fontSize="inherit" />
-                </IconButton>
-            </Tooltip>
-            <Menu
-                anchorEl={anchorEl}
-                open={open}
-                onClose={handleClose}
-            >
-                {tables
-                    .filter(t => t.derive === undefined || t.anchored)
-                    .map((table) => {
-                        const isSelected = selectedTableIds.includes(table.id);
-                        const isRequired = requiredTableIds.includes(table.id);
-                        return (
-                            <MenuItem 
-                                disabled={isSelected}
-                                key={table.id}
-                                onClick={() => handleTableSelect(table)}
-                                sx={{ 
-                                    fontSize: '12px',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center'
-                                }}
-                            >
-                                {table.displayId}
-                                {isRequired && <Typography sx={{ fontSize: '10px', color: 'text.secondary' }}>(required)</Typography>}
-                            </MenuItem>
-                        );
-                    })
-                }
-            </Menu>
-        </Box>
-    );
-};
-
-
-
 export const IdeaChip: FC<{
     mini?: boolean,
     idea: {text?: string, questions?: string[], goal: string, difficulty: 'easy' | 'medium' | 'hard', type?: 'branch' | 'deep_dive'} 
@@ -357,17 +252,11 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
     const currentTable = tables.find(t => t.id === tableId);
 
     const availableTables = tables.filter(t => t.derive === undefined || t.anchored);
-    const [additionalTableIds, setAdditionalTableIds] = useState<string[]>([]);
-
+  
     // Combine the main tableId with additional selected tables
-    const selectedTableIds = currentTable?.derive ? [...currentTable.derive.source, ...additionalTableIds] : [tableId, ...additionalTableIds];
-
-    const handleTableSelectionChange = (newTableIds: string[]) => {
-        // Filter out the main tableId since it's always included
-        const additionalIds = newTableIds.filter(id => id !== tableId);
-        setAdditionalTableIds(additionalIds);
-    };
-
+    let selectedTableIds = currentTable?.derive ? [...currentTable.derive.source] : [tableId];
+    selectedTableIds = [...selectedTableIds, ...availableTables.map(t => t.id).filter(id => !selectedTableIds.includes(id))];
+    
     // Function to get a question from the list with cycling
     const getQuestion = (): string => {
         return mode === "agent" ? "let's explore something interesting about the data" : "show something interesting about the data";
@@ -1238,17 +1127,6 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                         }} 
                     />
                 )}
-                {showTableSelector && (
-                    <Box>
-                        <NLTableSelector
-                            selectedTableIds={selectedTableIds}
-                            tables={availableTables}
-                            updateSelectedTableIds={handleTableSelectionChange}
-                            requiredTableIds={[tableId]}
-                        />
-                    </Box>
-                )}
-
                 <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'flex-end' }}>
                     <TextField
                         variant="standard"

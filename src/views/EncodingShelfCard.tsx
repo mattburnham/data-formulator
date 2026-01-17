@@ -250,111 +250,6 @@ export const TriggerCard: FC<{
     </Card>
 }
 
-// Add this component before EncodingShelfCard
-const UserActionTableSelector: FC<{
-    requiredActionTableIds: string[],
-    userSelectedActionTableIds: string[],
-    tables: DictTable[],
-    updateUserSelectedActionTableIds: (tableIds: string[]) => void,
-    requiredTableIds?: string[]
-}> = ({ requiredActionTableIds, userSelectedActionTableIds, tables, updateUserSelectedActionTableIds, requiredTableIds = [] }) => {
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const open = Boolean(anchorEl);
-
-    let actionTableIds = [...requiredActionTableIds, ...userSelectedActionTableIds.filter(id => !requiredActionTableIds.includes(id))];
-
-    const handleClick = (event: React.MouseEvent<HTMLElement>) => {
-        setAnchorEl(event.currentTarget);
-    };
-
-    const handleClose = () => {
-        setAnchorEl(null);
-    };
-
-    const handleTableSelect = (table: DictTable) => {
-        if (!actionTableIds.includes(table.id)) {
-            updateUserSelectedActionTableIds([...userSelectedActionTableIds, table.id]);
-        }
-        handleClose();
-    };
-
-    return (
-        <Box sx={{ 
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '2px',
-            padding: '4px',
-            marginBottom: 0.5,
-        }}>
-            {actionTableIds.map((tableId) => {
-                const isRequired = requiredTableIds.includes(tableId);
-                return (
-                    <Chip
-                        key={tableId}
-                        label={tables.find(t => t.id == tableId)?.displayId}
-                        size="small"
-                        sx={{
-                            height: 16,
-                            fontSize: '10px',
-                            borderRadius: '0px',
-                            bgcolor: isRequired ? 'rgba(25, 118, 210, 0.2)' : 'rgba(25, 118, 210, 0.1)', // darker blue for required
-                            color: 'rgba(0, 0, 0, 0.7)',
-                            '& .MuiChip-label': {
-                                pl: '4px',
-                                pr: '6px'
-                            }
-                        }}
-                        deleteIcon={<CloseIcon sx={{ fontSize: '8px', width: '12px', height: '12px' }} />}
-                        onDelete={isRequired ? undefined : () => updateUserSelectedActionTableIds(actionTableIds.filter(id => id !== tableId))}
-                    />
-                );
-            })}
-            <Tooltip title="add more base tables for data formulation">
-                <span>
-                    <IconButton
-                        size="small"
-                        onClick={handleClick}
-                        sx={{ 
-                            width: 16,
-                            height: 16,
-                            fontSize: '10px',
-                            padding: 0
-                        }}
-                    >
-                        <AddIcon fontSize="inherit" />
-                    </IconButton>
-                </span>
-            </Tooltip>
-            <Menu
-                anchorEl={anchorEl}
-                open={open}
-                onClose={handleClose}
-            >
-                {tables
-                    .map((table) => {
-                        const isSelected = !!actionTableIds.find(t => t === table.id);
-                        return (
-                            <MenuItem 
-                                disabled={isSelected}
-                                key={table.id}
-                                onClick={() => handleTableSelect(table)}
-                                sx={{ 
-                                    fontSize: '12px',
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    alignItems: 'center'
-                                }}
-                            >
-                                {table.displayId}
-                            </MenuItem>
-                        );
-                    })
-                }
-            </Menu>
-        </Box>
-    );
-};
-
 
 export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId }) {
     const theme = useTheme();
@@ -363,7 +258,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const config = useSelector((state: DataFormulatorState) => state.config);
     const agentRules = useSelector((state: DataFormulatorState) => state.agentRules);
-    let existMultiplePossibleBaseTables = tables.filter(t => t.derive == undefined || t.anchored).length > 1;
 
     let activeModel = useSelector(dfSelectors.getActiveModel);
     let allCharts = useSelector(dfSelectors.getAllCharts);
@@ -401,9 +295,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     // Check if chart is available
     let isChartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
 
-    // Add this state
-    const [userSelectedActionTableIds, setUserSelectedActionTableIds] = useState<string[]>([]);
-    
+
     // Consolidated chart state - maps chartId to its ideas, thinkingBuffer, and loading state
     const [chartState, setChartState] = useState<Record<string, {
         ideas: {text: string, goal: string, difficulty: 'easy' | 'medium' | 'hard'}[],
@@ -441,11 +333,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     
     // Add state for developer message dialog
     const [devMessageOpen, setDevMessageOpen] = useState<boolean>(false);
-    
-    // Update the handler to use state
-    const handleUserSelectedActionTableChange = (newTableIds: string[]) => {
-        setUserSelectedActionTableIds(newTableIds);
-    };
+
 
     let encodingBoxGroups = Object.entries(ChannelGroups)
         .filter(([group, channelList]) => channelList.some(ch => Object.keys(encodingMap).includes(ch)))
@@ -479,7 +367,7 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
     let requiredActionTables = selectBaseTables(activeFields, currentTable, tables);
     let actionTableIds = [
         ...requiredActionTables.map(t => t.id),
-        ...userSelectedActionTableIds.filter(id => !requiredActionTables.map(t => t.id).includes(id))
+        ...tables.filter(t => t.derive === undefined || t.anchored).map(t => t.id).filter(id => !requiredActionTables.map(t => t.id).includes(id))
     ];
 
     let getIdeasForVisualization = async () => {
@@ -1155,13 +1043,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
 
     let channelComponent = (
         <Box sx={{ width: "100%", minWidth: "210px", height: '100%', display: "flex", flexDirection: "column" }}>
-            {existMultiplePossibleBaseTables && <UserActionTableSelector 
-                requiredActionTableIds={requiredActionTables.map(t => t.id)}
-                userSelectedActionTableIds={userSelectedActionTableIds}
-                tables={tables.filter(t => t.derive === undefined || t.anchored)}
-                updateUserSelectedActionTableIds={handleUserSelectedActionTableChange}
-                requiredTableIds={requiredActionTables.map(t => t.id)}
-            />}
             <Box key='mark-selector-box' sx={{ flex: '0 0 auto' }}>
                 <FormControl sx={{ m: 1, minWidth: 120, width: "100%", margin: "0px 0"}} size="small">
                     <Select
