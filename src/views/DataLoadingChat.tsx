@@ -4,9 +4,7 @@
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 
-import { Box, Button, Divider, IconButton, Typography, Dialog, DialogTitle, DialogContent, Tooltip, CircularProgress } from '@mui/material';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import CloseIcon from '@mui/icons-material/Close';
+import { Box, Button, Divider, IconButton, Typography, Tooltip, CircularProgress } from '@mui/material';
 
 
 import { useDispatch, useSelector } from 'react-redux';
@@ -265,85 +263,4 @@ export const DataLoadingChat: React.FC = () => {
 
     return chatCard;
 };
-
-export interface DataLoadingChatDialogProps {
-    buttonElement?: any;
-    disabled?: boolean;
-    onOpen?: () => void;
-    // Controlled mode props
-    open?: boolean;
-    onClose?: () => void;
-}
-
-export const DataLoadingChatDialog: React.FC<DataLoadingChatDialogProps> = ({ 
-    buttonElement, 
-    disabled = false, 
-    onOpen,
-    open: controlledOpen,
-    onClose,
-}) => {
-    const [internalOpen, setInternalOpen] = useState<boolean>(false);
-    const dispatch = useDispatch<AppDispatch>();
-    const dataCleanBlocks = useSelector((state: DataFormulatorState) => state.dataCleanBlocks);
-
-    // Support both controlled and uncontrolled modes
-    const isControlled = controlledOpen !== undefined;
-    const dialogOpen = isControlled ? controlledOpen : internalOpen;
-    const setDialogOpen = isControlled 
-        ? (open: boolean) => { if (!open && onClose) onClose(); }
-        : setInternalOpen;
-
-    return (
-        <>
-            {buttonElement && (
-                <Button 
-                    sx={{fontSize: "inherit"}} 
-                    variant="text" 
-                    color="primary" 
-                    disabled={disabled}
-                    onClick={() => {
-                        setDialogOpen(true);
-                        onOpen?.();
-                    }}
-                >
-                    {buttonElement}
-                </Button>
-            )}
-            <Dialog 
-                key="data-loading-chat-dialog" 
-                onClose={() => setDialogOpen(false)} 
-                open={dialogOpen}
-                sx={{ '& .MuiDialog-paper': { maxWidth: '100%', maxHeight: 840, minWidth: 800 } }}
-            >
-                <DialogTitle sx={{display: "flex"}}>
-                    Extract Data
-                    {dataCleanBlocks.length > 0 && <Tooltip title="Reset dialog">  
-                        <IconButton size="small" color='warning' 
-                            sx={{
-                            '&:hover': {  transform: 'rotate(180deg)', 
-                                        transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)' } }} onClick={() => {
-                                            dispatch(dfActions.resetDataCleanBlocks());
-                                        }}>
-                            <RestartAltIcon fontSize="small" />
-                        </IconButton>
-                    </Tooltip>}
-                    <IconButton
-                        sx={{marginLeft: "auto"}}
-                        edge="start"
-                        size="small"
-                        color="inherit"
-                        onClick={() => setDialogOpen(false)}
-                        aria-label="close"
-                    >
-                        <CloseIcon fontSize="inherit"/>
-                    </IconButton>
-                </DialogTitle>
-                <DialogContent sx={{overflowX: "hidden", padding: 1}}>
-                    <DataLoadingChat />
-                </DialogContent>
-            </Dialog>
-        </>
-    );
-};
-
 

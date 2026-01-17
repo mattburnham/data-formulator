@@ -842,3 +842,85 @@ def data_loader_ingest_data_from_query():
             "status": "error", 
             "message": safe_msg
         }), status_code
+
+
+@tables_bp.route('/refresh-derived-data', methods=['POST'])
+def refresh_derived_data():
+    """
+    Re-run Python transformation code with new input data to refresh a derived table.
+    
+    This endpoint takes:
+    - input_tables: list of {name: string, rows: list} objects representing the parent tables
+    - code: the Python transformation code to execute
+    
+    Returns:
+    - status: 'ok' or 'error'
+    - rows: the resulting rows if successful
+    - message: error message if failed
+    """
+    try:
+        from data_formulator.py_sandbox import run_transform_in_sandbox2020
+        from flask import current_app
+        
+        data = request.get_json()
+        input_tables = data.get('input_tables', [])
+        code = data.get('code', '')
+        
+        if not input_tables:
+            return jsonify({
+                "status": "error",
+                "message": "No input tables provided"
+            }), 400
+            
+        if not code:
+            return jsonify({
+                "status": "error", 
+                "message": "No transformation code provided"
+            }), 400
+        
+        # Convert input tables to pandas DataFrames
+        df_list = []
+        for table in input_tables:
+            table_name = table.get('name', '')
+            table_rows = table.get('rows', [])
+            
+            if not table_rows:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Table '{table_name}' has no rows"
+                }), 400
+                
+            df = pd.DataFrame.from_records(table_rows)
+            df_list.append(df)
+        
+        # Get exec_python_in_subprocess setting from app config
+        exec_python_in_subprocess = current_app.config.get('CLI_ARGS', {}).get('exec_python_in_subprocess', False)
+        
+        # Run the transformation code
+        result = run_transform_in_sandbox2020(code, df_list, exec_python_in_subprocess)
+        
+        if result['status'] == 'ok':
+            result_df = result['content']
+            
+            # Convert result DataFrame to list of records
+            rows = json.loads(result_df.to_json(orient='records', date_format='iso'))
+            
+            return jsonify({
+                "status": "ok",
+                "rows": rows,
+                "message": "Successfully refreshed derived data"
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": result.get('content', 'Unknown error during transformation')
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Error refreshing derived data: {str(e)}")
+        logger.error(traceback.format_exc())
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error",
+            "message": safe_msg
+        }), status_code

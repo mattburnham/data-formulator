@@ -475,6 +475,29 @@ export const dataFormulatorSlice = createSlice({
             let attachedMetadata = action.payload.attachedMetadata;
             state.tables = state.tables.map(t => t.id == tableId ? {...t, attachedMetadata} : t);
         },
+        updateTableRows: (state, action: PayloadAction<{tableId: string, rows: any[]}>) => {
+            // Update the rows of a table while preserving all other table properties
+            // This is used for refreshing data in original (non-derived) tables
+            let tableId = action.payload.tableId;
+            let newRows = action.payload.rows;
+            
+            state.tables = state.tables.map(t => {
+                if (t.id == tableId) {
+                    // Update metadata type inference based on new data
+                    let newMetadata = { ...t.metadata };
+                    for (let name of t.names) {
+                        if (newRows.length > 0 && name in newRows[0]) {
+                            newMetadata[name] = {
+                                ...newMetadata[name],
+                                type: inferTypeFromValueArray(newRows.map(r => r[name])),
+                            };
+                        }
+                    }
+                    return { ...t, rows: newRows, metadata: newMetadata };
+                }
+                return t;
+            });
+        },
         extendTableWithNewFields: (state, action: PayloadAction<{tableId: string, columnName: string, values: any[], previousName: string | undefined, parentIDs: string[]}>) => {
             // extend the existing extTable with new columns from the new table
             let newValues = action.payload.values;

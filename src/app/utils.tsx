@@ -56,6 +56,9 @@ export function getUrls() {
         QUERY_COMPLETION: `/api/agent/query-completion`,
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
         GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
+
+        // Refresh data endpoint
+        REFRESH_DERIVED_DATA: `/api/tables/refresh-derived-data`,
     };
 }
 

@@ -89,7 +89,7 @@ If there is no data transformation needed based on "output_fields", the transfor
 import pandas as pd
 import collections
 import numpy as np
-from sklearn import ... # import necessary libraries from sklearn if needed
+# from sklearn import ... # import from sklearn if you need it.
 
 def transform_data(df1, df2, ...): 
     # complete the template here

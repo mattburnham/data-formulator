@@ -41,17 +41,14 @@ import { VisualizationViewFC } from './VisualizationView';
 import { ConceptShelf } from './ConceptShelf';
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
-import { TableCopyDialogV2, DatasetSelectionDialog } from './TableSelectionView';
-import { TableUploadDialog } from './TableSelectionView';
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
 
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
-import { DBTableSelectionDialog } from './DBTableManager';
 import { getUrls } from '../app/utils';
-import { DataLoadingChatDialog } from './DataLoadingChat';
+import { UnifiedDataUploadDialog, UploadTabType } from './UnifiedDataUploadDialog';
 import { ReportView } from './ReportView';
 import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
 
@@ -64,6 +61,15 @@ export const DataFormulatorFC = ({ }) => {
     const theme = useTheme();
 
     const dispatch = useDispatch();
+
+    // State for unified data upload dialog
+    const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+    const [uploadDialogInitialTab, setUploadDialogInitialTab] = useState<UploadTabType>('menu');
+
+    const openUploadDialog = (tab: UploadTabType) => {
+        setUploadDialogInitialTab(tab);
+        setUploadDialogOpen(true);
+    };
 
     const handleLoadExampleSession = (session: ExampleSession) => {
         dispatch(dfActions.addMessages({
@@ -274,19 +280,23 @@ export const DataFormulatorFC = ({ }) => {
             </Typography>
             <Box sx={{my: 4}}>
                 <Typography sx={{ 
-                    maxWidth: 1100, fontSize: 28, color: alpha(theme.palette.text.primary, 0.8), 
-                    '& span': { textDecoration: 'underline', textUnderlineOffset: '0.2em', cursor: 'pointer' }}}>
+                    maxWidth: 1100, fontSize: 32, color: alpha(theme.palette.text.primary, 0.8), 
+                    '& span': { textDecoration: 'underline', textUnderlineOffset: '0.2em', cursor: 'pointer', color: theme.palette.primary.main }}}>
                     To begin, 
-                    <DataLoadingChatDialog buttonElement={<span>extract</span>}/>{' '}
+                    {' '}<span onClick={() => openUploadDialog('extract')}>extract</span>{' '}
                     data from images or text documents, load {' '}
-                    <DatasetSelectionDialog buttonElement={<span>examples</span>}/>, 
+                    {' '}<span onClick={() => openUploadDialog('explore')}>examples</span>{' '}, 
                     upload data from{' '}
-                    <TableCopyDialogV2 buttonElement={<span>clipboard</span>} disabled={false}/> or {' '}
-                    <TableUploadDialog buttonElement={<span>files</span>} disabled={false}/>, 
-                    
+                    {' '}<span onClick={() => openUploadDialog('paste')}>clipboard</span> or {' '}
+                    {' '}<span onClick={() => openUploadDialog('upload')}>files</span>{' '}, 
                     or connect to a{' '}
-                    <DBTableSelectionDialog buttonElement={<span>database</span>}/>.
+                    {' '}<span onClick={() => openUploadDialog('database')}>database</span>{' '}.
                 </Typography>
+                <UnifiedDataUploadDialog 
+                    open={uploadDialogOpen}
+                    onClose={() => setUploadDialogOpen(false)}
+                    initialTab={uploadDialogInitialTab}
+                />
             </Box>
             <Box sx={{mt: 4}}>
                 <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>

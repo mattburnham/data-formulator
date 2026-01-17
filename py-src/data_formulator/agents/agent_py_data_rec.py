@@ -33,7 +33,7 @@ Concretely, you should infer the appropriate data and create in the output secti
     "display_instruction": "..." // string, the even shorter verb phrase describing the users' goal.
     "recommendation": "..." // string, explain why this recommendation is made
     "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preseve intermediate fields here
-    "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
+    "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar", 'boxplot'. "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
     "chart_encodings": {
         "x": "",
         "y": "",
@@ -65,7 +65,7 @@ Concretely:
         - if you mention column names from the input or the output data, highlight the text in **bold**.
             * the column can either be a column in the input data, or a new column that will be computed in the output data.
             * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
-    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
+    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot"
     - "chart_encodings" should specify which fields should be used to create the visualization
         - decide which visual channels should be used to create the visualization appropriate for the chart type.
             - point: x, y, color, size, facet
@@ -75,6 +75,7 @@ Concretely:
             - area: x, y, color, facet
             - heatmap: x, y, color, facet
             - group_bar: x, y, color, facet
+            - boxplot: x, y, color, facet
         - note that all fields used in "chart_encodings" should be included in "output_fields".
             - all fields you need for visualizations should be transformed into the output fields!
             - "output_fields" should include important intermediate fields that are not used in visualization but are used for data transformation.
@@ -108,6 +109,10 @@ Concretely:
                 - best for: Trends over time, continuous data
             - (heatmap) Heatmaps: x,y: Categorical (you need to convert quantitative to nominal), color: Quantitative intensity, 
                 - best for: Pattern discovery in matrix data
+            - (boxplot) Box plots: x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical (optional for creating grouped boxplots), 
+                - best for: Distribution of a quantitative field
+                - use x values directly if x values are categorical, and transform the data into bins if the field values are quantitative.
+                - when color is specified, the boxplot will be grouped automatically (items with the same x values will be grouped).
         - facet channel is available for all chart types, it supports a categorical field with small cardinality to visualize the data in different facets.
         - if you really need additional legend fields:
             - you can use opacity for legend (support Quantitative and Categorical).
@@ -135,7 +140,7 @@ Concretely:
             
     2. Then, write a python function based on the inferred goal, the function input is a dataframe "df" (or multiple dataframes based on tables presented in the [CONTEXT] section) and the output is the transformed dataframe "transformed_df". 
 "transformed_df" should contain all "output_fields" from the refined user intent in the json object.
-The python function must follow the template provided in [TEMPLATE], do not import any other libraries or modify function name. The function should be as simple as possible and easily readable. 
+The python function must follow the template provided in [TEMPLATE]. The function should be as simple as possible and easily readable. 
 If there is no data transformation needed based on "output_fields", the transformation function can simply "return df".
 
 [TEMPLATE]
@@ -144,7 +149,7 @@ If there is no data transformation needed based on "output_fields", the transfor
 import pandas as pd
 import collections
 import numpy as np
-from sklearn import ... # import necessary libraries from sklearn if needed
+# from sklearn import ... # import from sklearn if you need it.
 
 def transform_data(df1, df2, ...): 
     # complete the template here

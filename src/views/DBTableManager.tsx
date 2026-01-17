@@ -31,8 +31,6 @@ import {
   Chip,
   Collapse,
   styled,
-  ToggleButtonGroup,
-  ToggleButton,
   useTheme,
   Link,
   Checkbox
@@ -58,13 +56,8 @@ import { alpha } from '@mui/material';
 import { DataFormulatorState } from '../app/dfSlice';
 import { fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import Editor from 'react-simple-code-editor';
 import Markdown from 'markdown-to-jsx';
 
-import Prism from 'prismjs'
-import 'prismjs/components/prism-javascript' // Language
-import 'prismjs/themes/prism.css'; //Example style, you can use another
-import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import CheckIcon from '@mui/icons-material/Check';
 import MuiMarkdown from 'mui-markdown';
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
@@ -1050,43 +1043,13 @@ export const DataLoaderForm: React.FC<{
     const [displayAuthInstructions, setDisplayAuthInstructions] = useState(false);
 
     let [isConnecting, setIsConnecting] = useState(false);
-    let [mode, setMode] = useState<"view tables" | "query">("view tables");
 
     const toggleDisplaySamples = (tableName: string) => {
         setDisplaySamples({...displaySamples, [tableName]: !displaySamples[tableName]});
     }
 
-    const handleModeChange = (event: React.MouseEvent<HTMLElement>, newMode: "view tables" | "query") => {
-        if (newMode != null) {
-            setMode(newMode);
-        }
-    };
-
     let tableMetadataBox = [
-        <Box sx={{my: 2}}>
-            <ToggleButtonGroup
-                color="primary"
-                value={mode}
-                exclusive
-                size="small"
-                onChange={handleModeChange}
-                aria-label="Platform"
-                sx={{
-                    '& .MuiButtonBase-root': {
-                    lineHeight: 1,
-                    color: "text.primary",
-                    textTransform: 'none',
-                    '&.Mui-selected': {
-                        fontWeight: 'bold',
-                    }
-                }}}
-            >
-                <ToggleButton value="view tables">View Tables</ToggleButton>
-                <ToggleButton value="query">Query Data</ToggleButton>
-            </ToggleButtonGroup>
-            <Typography variant="body2" sx={{mb: 1,}}></Typography>
-        </Box>,
-        mode === "view tables" && <TableContainer component={Paper} sx={{maxHeight: 360, overflowY: "auto"}} >
+        <TableContainer component={Paper} sx={{maxHeight: 360, overflowY: "auto"}} >
             <Table sx={{ minWidth: 650 }} size="small" aria-label="simple table">
             <TableBody>
                 {Object.entries(tableMetadata).map(([tableName, metadata]) => {
@@ -1154,7 +1117,7 @@ export const DataLoaderForm: React.FC<{
                 </TableBody>
                 </Table>
             </TableContainer>,
-        mode === "view tables" && Object.keys(tableMetadata).length > 0 && <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+        Object.keys(tableMetadata).length > 0 && <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
             <Button 
                 variant="contained" 
                 size="small"
@@ -1196,11 +1159,7 @@ export const DataLoaderForm: React.FC<{
             >
                 Import Selected ({selectedTables.size})
             </Button>
-        </Box>,
-        mode === "query" && <DataQueryForm 
-            dataLoaderType={dataLoaderType} 
-            availableTables={Object.keys(tableMetadata).map(t => ({name: t, fields: tableMetadata[t].columns.map((c: any) => c.name)}))} 
-            dataLoaderParams={params} onImport={onImport} onFinish={onFinish} />
+        </Box>
     ]
 
     return (
@@ -1338,240 +1297,4 @@ export const DataLoaderForm: React.FC<{
             {Object.keys(tableMetadata).length > 0 && tableMetadataBox }
         </Box>
     );
-}
-
-export const DataQueryForm: React.FC<{
-    dataLoaderType: string,
-    availableTables: {name: string, fields: string[]}[],
-    dataLoaderParams: Record<string, string>,
-    onImport: () => void,
-    onFinish: (status: "success" | "error", message: string) => void
-}> = ({dataLoaderType, availableTables, dataLoaderParams, onImport, onFinish}) => {
-
-    let activeModel = useSelector(dfSelectors.getActiveModel);
-
-    const [selectedTables, setSelectedTables] = useState<string[]>(availableTables.map(t => t.name).slice(0, 5));
-
-    const [waiting, setWaiting] = useState(false);
-
-    const [query, setQuery] = useState("-- query the data source / describe your goal and ask AI to help you write the query\n");
-    const [queryResult, setQueryResult] = useState<{
-        status: string,
-        message: string,
-        sample: any[],
-        code: string,
-    } | undefined>(undefined);
-    const [queryResultName, setQueryResultName] = useState("");
-    
-    const aiCompleteQuery = (query: string) => {
-        if (queryResult?.status === "error") {
-            setQueryResult(undefined);
-        }
-        let data = {
-            data_source_metadata: {
-                data_loader_type: dataLoaderType,
-                tables: availableTables.filter(t => selectedTables.includes(t.name))
-            },
-            query: query,
-            model: activeModel
-        }
-        setWaiting(true);
-        fetch(getUrls().QUERY_COMPLETION, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data)
-        })
-        .then(response => response.json())
-        .then(data => {
-            setWaiting(false);
-            if (data.status === "ok") {
-                setQuery(data.query);
-            } else {
-                onFinish("error", data.reasoning);
-            }
-        })
-        .catch(error => {
-            setWaiting(false);
-            onFinish("error", `Failed to complete query please try again.`);
-        });
-    }
-
-    const handleViewQuerySample = (query: string) => {
-        setQueryResult(undefined);
-        setWaiting(true);
-        fetch(getUrls().DATA_LOADER_VIEW_QUERY_SAMPLE, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                data_loader_type: dataLoaderType,
-                data_loader_params: dataLoaderParams,
-                query: query
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            setWaiting(false);
-            if (data.status === "success") {
-                setQueryResult({
-                    status: "success",
-                    message: "Data loaded successfully",
-                    sample: data.sample,
-                    code: query
-                });
-                let newName = `r_${Math.random().toString(36).substring(2, 4)}`;
-                setQueryResultName(newName);
-            } else {
-                setQueryResult({
-                    status: "error",
-                    message: data.message,
-                    sample: [],
-                    code: query
-                });
-            }
-        })
-        .catch(error => {
-            setWaiting(false);
-            setQueryResult({
-                status: "error",
-                message: `Failed to view query sample, please try again.`,
-                sample: [],
-                code: query
-            });
-        });
-    }
-
-    const handleImportQueryResult = () => {
-        setWaiting(true);
-        fetch(getUrls().DATA_LOADER_INGEST_DATA_FROM_QUERY, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                data_loader_type: dataLoaderType,
-                data_loader_params: dataLoaderParams,
-                query: queryResult?.code ?? query,
-                name_as: queryResultName
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            setWaiting(false);
-            if (data.status === "success") {
-                onFinish("success", "Data imported successfully");
-            } else {
-                onFinish("error", data.reasoning);
-            }
-        })
-        .catch(error => {
-            setWaiting(false);
-            onFinish("error", `Failed to import data, please try again.`);
-        });
-    }
-
-    let queryResultBox = queryResult?.status === "success" && queryResult.sample.length > 0 ? [
-         <Box key="query-result-table" sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "space-between"}}>
-            <CustomReactTable rows={queryResult.sample} columnDefs={Object.keys(queryResult.sample[0]).map((t: any) => ({id: t, label: t}))} rowsPerPageNum={-1} compact={false} />
-        </Box>,
-        <Box key="query-result-controls" sx={{display: "flex", flexDirection: "row", gap: 1, alignItems: "center"}}>
-            <Button variant="outlined" color="primary" size="small" sx={{textTransform: "none", minWidth: 120, mr: 'auto'}}
-                onClick={() => {
-                    setQueryResult(undefined);
-                    setQueryResultName("");
-                }}>
-                clear result
-            </Button>
-            <TextField
-                size="small"
-                label="import as"
-                sx={{width: 120, ml: 'auto', '& .MuiInputBase-root': {fontSize: 12, height: 32}, 
-                     '& .MuiInputLabel-root': {fontSize: 12, transform: "translate(14px, -6px) scale(0.75)"}}}
-                slotProps={{
-                    inputLabel: {shrink: true},
-                }}
-                value={queryResultName}
-                onChange={(event: any) => setQueryResultName(event.target.value)}
-            />
-            <Button variant="contained" color="primary" size="small" disabled={queryResultName === ""} sx={{textTransform: "none", width: 120}}
-                onClick={() => handleImportQueryResult()}>
-            import data
-            </Button> 
-        </Box>
-    ] : [];
-    
-    return (
-        <Paper sx={{display: "flex", flexDirection: "column", gap: 1, p: 1, position: "relative"}}>
-            {waiting && <Box sx={{position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
-                display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-                backgroundColor: "rgba(255, 255, 255, 0.7)"}}>
-                <CircularProgress size={20} />
-            </Box>}
-            <Typography variant="body2" sx={{color: "text.secondary"}}>
-                <Typography variant="caption" sx={{color: "text.primary", fontSize: 11, mx: 0.5}}>
-                    query from tables:
-                </Typography>
-                {availableTables.map((table) => (
-                    <Chip key={table.name} label={table.name} //icon={selectedTables.includes(table.name) ? <CheckIcon /> : undefined}
-                        color={selectedTables.includes(table.name) ? "primary" : "default"} variant="outlined" 
-                        sx={{ fontSize: 11, margin: 0.25, 
-                            height: 20, borderRadius: 0.5, 
-                            borderColor: selectedTables.includes(table.name) ? "primary.main" : "rgba(0, 0, 0, 0.1)",
-                            color: selectedTables.includes(table.name) ? "primary.main" : "text.secondary",
-                            '&:hover': {
-                                backgroundColor: "rgba(0, 0, 0, 0.07)",
-                            }
-                        }}
-                        size="small" 
-                        onClick={() => {
-                            setSelectedTables(selectedTables.includes(table.name) ? selectedTables.filter(t => t !== table.name) : [...selectedTables, table.name]);
-                        }}
-                    />
-                ))}
-            </Typography>
-            <Box sx={{display: "flex", flexDirection: "column", gap: 1, }}>
-                <Box sx={{maxHeight: 300, overflowY: "auto"}}>
-                    <Editor
-                        value={query}
-                        onValueChange={(tempCode: string) => {
-                            setQuery(tempCode);
-                        }}
-                        highlight={code => Prism.highlight(code, Prism.languages.sql, 'sql')}
-                        padding={10}
-                        style={{
-                            minHeight: queryResult ? 60 : 200,
-                            fontFamily: '"Fira code", "Fira Mono", monospace',
-                            fontSize: 12,
-                            paddingBottom: '24px',
-                            backgroundColor: "rgba(0, 0, 0, 0.03)",
-                            overflowY: "auto"
-                        }}
-                    />
-                </Box>
-                {queryResult?.status === "error" && <Box sx={{display: "flex", flexDirection: "row", gap: 1, alignItems: "center", overflow: "auto"}}>
-                        <Typography variant="body2" sx={{color: "text.secondary", fontSize: 11, backgroundColor: "rgba(255, 0, 0, 0.1)", p: 0.5, borderRadius: 0.5}}>
-                            {queryResult?.message} 
-                        </Typography>
-                    </Box>}
-                <Box sx={{display: "flex", flexDirection: "row", gap: 1, justifyContent: "flex-end"}}>
-                    <Button variant="outlined" color="primary" size="small" sx={{textTransform: "none"}} disabled={queryResult?.status === "error"}
-                        startIcon={<PrecisionManufacturingIcon />} onClick={() => aiCompleteQuery(query)}>
-                        help me complete the query from selected tables
-                    </Button>
-                    {queryResult?.status === "error" && <Button variant="contained" color="primary" size="small" sx={{textTransform: "none",minWidth: 120}} 
-                        startIcon={<PrecisionManufacturingIcon />} onClick={() => aiCompleteQuery(queryResult.code + "\n error:" + queryResult.message)}>
-                        help me fix the error
-                    </Button>}
-                    <Button variant="contained" color="primary" size="small" sx={{textTransform: "none", ml: 'auto', width: 80}}
-                        onClick={() => handleViewQuerySample(query)}>
-                        run query
-                    </Button>
-                </Box>
-                {queryResult && queryResultBox}
-            </Box>
-        </Paper>
-    )
 }

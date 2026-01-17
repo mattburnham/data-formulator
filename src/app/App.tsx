@@ -64,16 +64,17 @@ import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
 import dfLogo from '../assets/df-logo.png';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
-import { TableCopyDialogV2 } from '../views/TableSelectionView';
-import { TableUploadDialog } from '../views/TableSelectionView';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
+import { handleDBDownload } from '../views/DBTableManager';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import { getUrls } from './utils';
-import { DataLoadingChatDialog } from '../views/DataLoadingChat';
+import { UnifiedDataUploadDialog, UploadTabType } from '../views/UnifiedDataUploadDialog';
+import LinkIcon from '@mui/icons-material/Link';
+import ImageSearchIcon from '@mui/icons-material/ImageSearch';
+import ExploreIcon from '@mui/icons-material/Explore';
 import ChatIcon from '@mui/icons-material/Chat';
 import { AgentRulesDialog } from '../views/AgentRulesDialog';
 import ArticleIcon from '@mui/icons-material/Article';
@@ -221,18 +222,14 @@ export interface AppFCProps {
 // Extract menu components into separate components to prevent full app re-renders
 const TableMenu: React.FC = () => {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const [openDialog, setOpenDialog] = useState<'database' | 'extract' | 'paste' | 'upload' | null>(null);
-    const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const [dialogOpen, setDialogOpen] = useState<boolean>(false);
+    const [initialTab, setInitialTab] = useState<UploadTabType>('menu');
     const open = Boolean(anchorEl);
 
-    const handleOpenDialog = (dialog: 'database' | 'extract' | 'paste' | 'upload') => {
+    const handleOpenDialog = (tab: UploadTabType) => {
         setAnchorEl(null);
-        if (dialog === 'upload') {
-            // For file upload, trigger the hidden file input
-            fileInputRef.current?.click();
-        } else {
-            setOpenDialog(dialog);
-        }
+        setInitialTab(tab);
+        setDialogOpen(true);
     };
     
     return (
@@ -262,43 +259,45 @@ const TableMenu: React.FC = () => {
                     '& .MuiTypography-root': { fontSize: 14, display: 'flex', alignItems: 'center', textTransform: 'none', gap: 1 }
                 }}
             >
+                <MenuItem onClick={() => handleOpenDialog('upload')}>
+                    <Typography fontSize="inherit">
+                        <UploadFileIcon fontSize="inherit" /> upload file <span style={{fontSize: '11px'}}>(csv/json/xlsx)</span>
+                    </Typography>
+                </MenuItem>
+                <MenuItem onClick={() => handleOpenDialog('paste')}>
+                    <Typography fontSize="inherit">
+                        <ContentPasteIcon fontSize="inherit" /> paste data <span style={{fontSize: '11px'}}>(csv/tsv/json)</span>
+                    </Typography>
+                </MenuItem>
+                <MenuItem onClick={() => handleOpenDialog('url')}>
+                    <Typography fontSize="inherit">
+                        <LinkIcon fontSize="inherit" /> from URL
+                    </Typography>
+                </MenuItem>
+                <Divider />
                 <MenuItem onClick={() => handleOpenDialog('database')}>
                     <Typography fontSize="inherit">
-                        connect to database <CloudQueueIcon fontSize="inherit" /> 
+                        <CloudQueueIcon fontSize="inherit" /> database
                     </Typography>
                 </MenuItem>
                 <MenuItem onClick={() => handleOpenDialog('extract')}>
                     <Typography fontSize="inherit">
-                        extract data <span style={{fontSize: '11px'}}>(image/messy text)</span>
+                        <ImageSearchIcon fontSize="inherit" /> extract data <span style={{fontSize: '11px'}}>(image/text)</span>
                     </Typography>
                 </MenuItem>
-                <MenuItem onClick={() => handleOpenDialog('paste')}>
-                    <Typography>
-                        paste data <span style={{fontSize: '11px'}}>(csv/tsv)</span>
-                    </Typography>
-                </MenuItem>
-                <MenuItem onClick={() => handleOpenDialog('upload')}>
-                    <Typography>
-                        upload data file <span style={{fontSize: '11px'}}>(csv/tsv/json)</span>
+                <Divider />
+                <MenuItem onClick={() => handleOpenDialog('explore')}>
+                    <Typography fontSize="inherit">
+                        <ExploreIcon fontSize="inherit" /> explore samples
                     </Typography>
                 </MenuItem>
             </Menu>
             
-            {/* Dialogs rendered outside the Menu to avoid keyboard event issues */}
-            <DBTableSelectionDialog 
-                open={openDialog === 'database'} 
-                onClose={() => setOpenDialog(null)} 
-            />
-            <DataLoadingChatDialog 
-                open={openDialog === 'extract'} 
-                onClose={() => setOpenDialog(null)} 
-            />
-            <TableCopyDialogV2 
-                open={openDialog === 'paste'} 
-                onClose={() => setOpenDialog(null)} 
-            />
-            <TableUploadDialog 
-                fileInputRef={fileInputRef}
+            {/* Unified Data Upload Dialog */}
+            <UnifiedDataUploadDialog 
+                open={dialogOpen}
+                onClose={() => setDialogOpen(false)}
+                initialTab={initialTab}
             />
         </>
     );

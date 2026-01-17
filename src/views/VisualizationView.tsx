@@ -553,7 +553,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             setVisTableTotalRowCount(table.virtual?.rowCount || table.rows.length);
             setDataVersion(versionId);
         }
-    }, [dataRequirements])
+    }, [dataRequirements, table.rows])
     
 
 

@@ -22,7 +22,9 @@ import {
     Popper,
     Paper,
     ClickAwayListener,
-    Badge
+    Badge,
+    Menu,
+    MenuItem,
 } from '@mui/material';
 
 import { VegaLite } from 'react-vega'
@@ -61,10 +63,15 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 import { alpha } from '@mui/material/styles';
 
 import { dfSelectors } from '../app/dfSlice';
+import { RefreshDataDialog } from './RefreshDataDialog';
+import { getUrls } from '../app/utils';
+import { AppDispatch } from '../app/store';
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
     <Box sx={{ 
@@ -490,6 +497,16 @@ let SingleThreadGroupView: FC<{
     const [selectedTableForMetadata, setSelectedTableForMetadata] = useState<DictTable | null>(null);
     const [metadataAnchorEl, setMetadataAnchorEl] = useState<HTMLElement | null>(null);
 
+    // Table menu state
+    const [tableMenuAnchorEl, setTableMenuAnchorEl] = useState<HTMLElement | null>(null);
+    const [selectedTableForMenu, setSelectedTableForMenu] = useState<DictTable | null>(null);
+
+    // Refresh data dialog state
+    const [refreshDialogOpen, setRefreshDialogOpen] = useState(false);
+    const [selectedTableForRefresh, setSelectedTableForRefresh] = useState<DictTable | null>(null);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const activeModel = useSelector(dfSelectors.getActiveModel);
 
     let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
         dispatch(dfActions.updateTableDisplayId({
@@ -516,6 +533,127 @@ let SingleThreadGroupView: FC<{
                 tableId: selectedTableForMetadata.id,
                 attachedMetadata: metadata
             }));
+        }
+    };
+
+    // Table menu handlers
+    const handleOpenTableMenu = (table: DictTable, anchorEl: HTMLElement) => {
+        setSelectedTableForMenu(table);
+        setTableMenuAnchorEl(anchorEl);
+    };
+
+    const handleCloseTableMenu = () => {
+        setTableMenuAnchorEl(null);
+        setSelectedTableForMenu(null);
+    };
+
+    // Refresh data handlers
+    const handleOpenRefreshDialog = (table: DictTable) => {
+        setSelectedTableForRefresh(table);
+        setRefreshDialogOpen(true);
+        handleCloseTableMenu();
+    };
+
+    const handleCloseRefreshDialog = () => {
+        setRefreshDialogOpen(false);
+        setSelectedTableForRefresh(null);
+    };
+
+    // Function to refresh derived tables
+    const refreshDerivedTables = async (sourceTableId: string, newRows: any[]) => {
+        // Find all tables that are derived from this source table
+        const derivedTables = tables.filter(t => t.derive?.source?.includes(sourceTableId));
+        
+        for (const derivedTable of derivedTables) {
+            if (derivedTable.derive && derivedTable.derive.code) {
+                // Gather all parent tables for this derived table
+                const parentTableData = derivedTable.derive.source.map(sourceId => {
+                    const sourceTable = tables.find(t => t.id === sourceId);
+                    if (sourceTable) {
+                        // Use the new rows if this is the table being refreshed
+                        const rows = sourceId === sourceTableId ? newRows : sourceTable.rows;
+                        return {
+                            name: sourceTable.id,
+                            rows: rows
+                        };
+                    }
+                    return null;
+                }).filter(t => t !== null);
+
+                if (parentTableData.length > 0) {
+                    try {
+                        const response = await fetch(getUrls().REFRESH_DERIVED_DATA, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                input_tables: parentTableData,
+                                code: derivedTable.derive.code
+                            })
+                        });
+
+                        const result = await response.json();
+                        if (result.status === 'ok' && result.rows) {
+                            // Update the derived table with new rows
+                            dispatch(dfActions.updateTableRows({
+                                tableId: derivedTable.id,
+                                rows: result.rows
+                            }));
+
+                            // Recursively refresh tables derived from this one
+                            await refreshDerivedTables(derivedTable.id, result.rows);
+                        } else {
+                            console.error(`Failed to refresh derived table ${derivedTable.id}:`, result.message);
+                            dispatch(dfActions.addMessages({
+                                timestamp: Date.now(),
+                                type: 'error',
+                                component: 'data refresh',
+                                value: `Failed to refresh derived table "${derivedTable.displayId || derivedTable.id}": ${result.message || 'Unknown error'}`
+                            }));
+                        }
+                    } catch (error) {
+                        console.error(`Error refreshing derived table ${derivedTable.id}:`, error);
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(),
+                            type: 'error',
+                            component: 'data refresh',
+                            value: `Error refreshing derived table "${derivedTable.displayId || derivedTable.id}"`
+                        }));
+                    }
+                }
+            }
+        }
+    };
+
+    const handleRefreshComplete = async (newRows: any[]) => {
+        if (!selectedTableForRefresh) return;
+
+        setIsRefreshing(true);
+        try {
+            // Update the source table with new rows
+            dispatch(dfActions.updateTableRows({
+                tableId: selectedTableForRefresh.id,
+                rows: newRows
+            }));
+
+            // Refresh all derived tables
+            await refreshDerivedTables(selectedTableForRefresh.id, newRows);
+
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data refresh',
+                value: `Successfully refreshed data for "${selectedTableForRefresh.displayId || selectedTableForRefresh.id}" and updated derived tables.`
+            }));
+        } catch (error) {
+            console.error('Error during refresh:', error);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data refresh',
+                value: `Error refreshing data: ${error}`
+            }));
+        } finally {
+            setIsRefreshing(false);
         }
     };
 
@@ -673,43 +811,8 @@ let SingleThreadGroupView: FC<{
                         </Box>
                     </Stack>
                     <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
-                        {table?.derive == undefined && <Tooltip key="attach-metadata-btn-tooltip" title={table?.attachedMetadata ? "edit table metadata" : "attach table metadata"}>
-                            <IconButton aria-label="attach metadata" size="small" sx={{ 
-                                padding: 0.25, 
-                                '&:hover': {
-                                    transform: 'scale(1.2)',
-                                    transition: 'all 0.1s linear'
-                                } 
-                            }}
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleOpenMetadataPopup(table!, event.currentTarget);
-                                }}
-                            >
-                                <AttachFileIcon fontSize="small" sx={{ 
-                                    fontSize: 18,
-                                    color: table?.attachedMetadata ? 'secondary.main' : 'text.secondary',
-                                    opacity: table?.attachedMetadata ? 1 : 0.7
-                                }}/>
-                            </IconButton>
-                        </Tooltip>}
-                        
-                        {tableDeleteEnabled && <Tooltip key="delete-table-btn-tooltip" title="delete table">
-                            <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
-                                transform: 'scale(1.2)',
-                                transition: 'all 0.1s linear'
-                                } }}
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    dispatch(dfActions.deleteTable(tableId));
-                                }}
-                            >
-                                <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
-                            </IconButton>
-                        </Tooltip>}
-                        
                         <Tooltip key="create-new-chart-btn-tooltip" title="create a new chart">
-                            <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
+                            <IconButton aria-label="create chart" size="small" sx={{ padding: 0.25, '&:hover': {
                                 transform: 'scale(1.2)',
                                 transition: 'all 0.1s linear'
                                 } }}
@@ -722,6 +825,48 @@ let SingleThreadGroupView: FC<{
                                 <AddchartIcon fontSize="small" sx={{ fontSize: 18 }} color='primary'/>
                             </IconButton>
                         </Tooltip>
+                        
+                        {/* For non-derived, non-virtual tables: show dropdown menu with metadata, refresh, delete */}
+                        {table?.derive == undefined && !table?.virtual && (
+                            <Tooltip key="table-menu-btn-tooltip" title="more options">
+                                <IconButton 
+                                    aria-label="more options" 
+                                    size="small" 
+                                    sx={{ 
+                                        padding: 0.25, 
+                                        '&:hover': {
+                                            transform: 'scale(1.2)',
+                                            transition: 'all 0.1s linear'
+                                        } 
+                                    }}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        handleOpenTableMenu(table!, event.currentTarget);
+                                    }}
+                                >
+                                    <MoreVertIcon fontSize="small" sx={{ fontSize: 18, color: 'text.secondary' }}/>
+                                </IconButton>
+                            </Tooltip>
+                        )}
+
+                        {/* For derived tables or virtual tables: show individual buttons */}
+                        {(table?.derive != undefined || table?.virtual) && (
+                            <>
+                                {tableDeleteEnabled && <Tooltip key="delete-table-btn-tooltip" title="delete table">
+                                    <IconButton aria-label="delete" size="small" sx={{ padding: 0.25, '&:hover': {
+                                        transform: 'scale(1.2)',
+                                        transition: 'all 0.1s linear'
+                                        } }}
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            dispatch(dfActions.deleteTable(tableId));
+                                        }}
+                                    >
+                                        <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
+                                    </IconButton>
+                                </Tooltip>}
+                            </>
+                        )}
                     </ButtonGroup>
                 </Box>
             </Card>
@@ -888,6 +1033,67 @@ let SingleThreadGroupView: FC<{
             initialValue={selectedTableForMetadata?.attachedMetadata || ''}
             tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
         />
+
+        {/* Table actions menu for non-derived, non-virtual tables */}
+        <Menu
+            anchorEl={tableMenuAnchorEl}
+            open={Boolean(tableMenuAnchorEl)}
+            onClose={handleCloseTableMenu}
+            onClick={(e) => e.stopPropagation()}
+        >
+            <MenuItem 
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (selectedTableForMenu) {
+                        handleOpenMetadataPopup(selectedTableForMenu, tableMenuAnchorEl!);
+                    }
+                    handleCloseTableMenu();
+                }}
+                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+            >
+                <AttachFileIcon sx={{ 
+                    fontSize: 16,
+                    color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
+                }}/>
+                {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
+            </MenuItem>
+            <MenuItem 
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (selectedTableForMenu) {
+                        handleOpenRefreshDialog(selectedTableForMenu);
+                    }
+                }}
+                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+            >
+                <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
+                Refresh data
+            </MenuItem>
+            <MenuItem 
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (selectedTableForMenu) {
+                        dispatch(dfActions.deleteTable(selectedTableForMenu.id));
+                    }
+                    handleCloseTableMenu();
+                }}
+                disabled={selectedTableForMenu ? tables.some(t => t.derive?.trigger.tableId === selectedTableForMenu.id) : true}
+                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
+            >
+                <DeleteIcon sx={{ fontSize: 16 }} color='warning'/>
+                Delete table
+            </MenuItem>
+        </Menu>
+
+        {/* Refresh data dialog */}
+        {selectedTableForRefresh && (
+            <RefreshDataDialog
+                open={refreshDialogOpen}
+                onClose={handleCloseRefreshDialog}
+                table={selectedTableForRefresh}
+                onRefreshComplete={handleRefreshComplete}
+            />
+        )}
     </Box>
 }
 
