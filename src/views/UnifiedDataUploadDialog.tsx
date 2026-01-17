@@ -767,9 +767,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             maxWidth={false}
             sx={{ 
                 '& .MuiDialog-paper': { 
-                    width: activeTab === 'menu' ? 720 : 1100,
+                    width: 1100,
                     maxWidth: '95vw',
-                    height: activeTab === 'menu' ? 'auto' : 700, 
+                    height: 700, 
                     maxHeight: '90vh',
                     display: 'flex',
                     flexDirection: 'column',
@@ -820,11 +820,13 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             <DialogContent sx={{ flex: 1, overflow: 'hidden', p: 0 }}>
                 {/* Main Menu */}
                 <TabPanel value={activeTab} index="menu">
-                    <Box sx={{ p: 2 }}>
+                    <Box sx={{ p: 2, boxSizing: 'border-box', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <Box sx={{ 
+                            width: '100%',
+                            maxWidth: 860,
                             display: 'grid', 
                             gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                            gap: 1,
+                            gap: 1.5,
                         }}>
                             {dataSourceConfig.map((source) => (
                                 <DataSourceCard
