@@ -796,7 +796,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     </IconButton>
                 )}
                 <Typography variant="h6" component="span">
-                    {activeTab === 'menu' ? 'Add Data' : getCurrentTabTitle()}
+                    {activeTab === 'menu' ? 'Load Data' : getCurrentTabTitle()}
                 </Typography>
                 {activeTab === 'extract' && dataCleanBlocks.length > 0 && (
                     <Tooltip title="Reset extraction">

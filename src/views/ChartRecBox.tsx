@@ -1146,7 +1146,10 @@ export const ChartRecBox: FC<ChartRecBoxProps> = function ({ tableId, placeHolde
                             "& .MuiInput-underline:not(.Mui-disabled):before": {
                                 borderBottom: 'none',
                             },
-                            "& .MuiInput-underline:(.Mui-disabled):before": {
+                            "& .MuiInput-underline.Mui-disabled:before": {
+                                borderBottom: 'none',
+                            },
+                            "& .MuiInput-underline.Mui-disabled:after": {
                                 borderBottom: 'none',
                             },
                             "& .MuiInput-underline:after": {
