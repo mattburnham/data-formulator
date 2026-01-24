@@ -368,6 +368,70 @@ export const ReportView: FC = () => {
         }
     }, [currentReportId]);
 
+    // Auto-refresh chart images when underlying table data changes
+    // This enables real-time chart updates in reports when data is streaming
+    const tableRowSignaturesRef = useRef<Map<string, string>>(new Map());
+    
+    useEffect(() => {
+        if (!currentReportId || mode !== 'post') return;
+        
+        const currentReport = allGeneratedReports.find(r => r.id === currentReportId);
+        if (!currentReport) return;
+        
+        // Get all tables referenced by the report's charts
+        const reportChartIds = currentReport.selectedChartIds;
+        const affectedTableIds = new Set<string>();
+        
+        reportChartIds.forEach(chartId => {
+            const chart = charts.find(c => c.id === chartId);
+            if (chart) {
+                affectedTableIds.add(chart.tableRef);
+            }
+        });
+        
+        // Check if any affected tables have changed
+        let hasChanges = false;
+        affectedTableIds.forEach(tableId => {
+            const table = tables.find(t => t.id === tableId);
+            if (table) {
+                // Create a signature for the table data
+                const rowCount = table.rows.length;
+                const firstRows = JSON.stringify(table.rows.slice(0, 3));
+                const lastRows = JSON.stringify(table.rows.slice(-2));
+                const signature = `${rowCount}:${firstRows}:${lastRows}`;
+                
+                const prevSignature = tableRowSignaturesRef.current.get(tableId);
+                if (prevSignature && prevSignature !== signature) {
+                    hasChanges = true;
+                }
+                tableRowSignaturesRef.current.set(tableId, signature);
+            }
+        });
+        
+        // If data changed, regenerate chart images for the report
+        if (hasChanges) {
+            console.log('[ReportView] Table data changed, refreshing chart images...');
+            
+            reportChartIds.forEach(chartId => {
+                const chart = charts.find(c => c.id === chartId);
+                if (!chart) return;
+                
+                const chartTable = tables.find(t => t.id === chart.tableRef);
+                if (!chartTable) return;
+                
+                if (chart.chartType === 'Table' || chart.chartType === '?') {
+                    return;
+                }
+                
+                getChartImageFromVega(chart, chartTable).then(({ blobUrl, width, height }) => {
+                    if (blobUrl) {
+                        updateCachedReportImages(chart.id, blobUrl, width, height);
+                    }
+                });
+            });
+        }
+    }, [tables, currentReportId, mode, allGeneratedReports, charts]);
+
 
     
     // Sort charts based on data thread ordering

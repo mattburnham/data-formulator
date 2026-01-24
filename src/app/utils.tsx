@@ -52,6 +52,9 @@ export function getUrls() {
         DATA_LOADER_INGEST_DATA: `/api/tables/data-loader/ingest-data`,
         DATA_LOADER_VIEW_QUERY_SAMPLE: `/api/tables/data-loader/view-query-sample`,
         DATA_LOADER_INGEST_DATA_FROM_QUERY: `/api/tables/data-loader/ingest-data-from-query`,
+        DATA_LOADER_REFRESH_TABLE: `/api/tables/data-loader/refresh-table`,
+        DATA_LOADER_GET_TABLE_METADATA: `/api/tables/data-loader/get-table-metadata`,
+        DATA_LOADER_LIST_TABLE_METADATA: `/api/tables/data-loader/list-table-metadata`,
 
         QUERY_COMPLETION: `/api/agent/query-completion`,
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
@@ -80,6 +83,9 @@ const SESSION_REQUIRED_ENDPOINTS = [
     '/api/tables/data-loader/ingest-data',
     '/api/tables/data-loader/view-query-sample',
     '/api/tables/data-loader/ingest-data-from-query',
+    '/api/tables/data-loader/refresh-table',
+    '/api/tables/data-loader/get-table-metadata',
+    '/api/tables/data-loader/list-table-metadata',
     '/api/tables/refresh-derived-data',
 ];
 
@@ -184,6 +190,104 @@ export function usePrevious<T>(value: T): T | undefined {
         ref.current = value;
     });
     return ref.current;
+}
+
+/**
+ * Simple hash function (djb2 algorithm) for creating content fingerprints
+ * @param str - The string to hash
+ * @returns A hexadecimal hash string
+ */
+function djb2Hash(str: string): string {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) + hash) + str.charCodeAt(i);
+        hash = hash & hash; // Convert to 32-bit integer
+    }
+    return (hash >>> 0).toString(16); // Convert to unsigned and then to hex
+}
+
+/**
+ * Computes a content hash for table data to detect changes.
+ * Uses a sampling strategy for efficiency with large datasets:
+ * - Always includes column names and row count
+ * - Samples first 50, last 50, and 50 evenly distributed rows from the middle
+ * - This catches most data changes while remaining efficient
+ * 
+ * @param rows - The table rows to hash
+ * @param names - Optional column names (for additional fingerprinting)
+ * @returns A hash string representing the content
+ */
+export function computeContentHash(rows: any[], names?: string[]): string {
+    const parts: string[] = [];
+    
+    // Include column names if provided
+    if (names && names.length > 0) {
+        parts.push(`cols:${names.join(',')}`);
+    }
+    
+    // Include row count
+    const rowCount = rows.length;
+    parts.push(`count:${rowCount}`);
+    
+    if (rowCount === 0) {
+        return djb2Hash(parts.join('|'));
+    }
+    
+    // Get column names from first row if not provided
+    const columnNames = names || Object.keys(rows[0] || {});
+    parts.push(`fields:${columnNames.join(',')}`);
+    
+    // Sampling strategy for efficiency
+    const sampleSize = 50;
+    const samplesToInclude: number[] = [];
+    
+    // Always include first N rows
+    for (let i = 0; i < Math.min(sampleSize, rowCount); i++) {
+        samplesToInclude.push(i);
+    }
+    
+    // Include evenly distributed rows from the middle
+    if (rowCount > sampleSize * 2) {
+        const step = Math.floor((rowCount - sampleSize * 2) / sampleSize);
+        if (step > 0) {
+            for (let i = sampleSize; i < rowCount - sampleSize; i += step) {
+                if (samplesToInclude.length < sampleSize * 2) {
+                    samplesToInclude.push(i);
+                }
+            }
+        }
+    }
+    
+    // Always include last N rows
+    for (let i = Math.max(rowCount - sampleSize, sampleSize); i < rowCount; i++) {
+        if (!samplesToInclude.includes(i)) {
+            samplesToInclude.push(i);
+        }
+    }
+    
+    // Sort indices for consistent ordering
+    samplesToInclude.sort((a, b) => a - b);
+    
+    // Build content string from sampled rows
+    const rowStrings: string[] = [];
+    for (const idx of samplesToInclude) {
+        const row = rows[idx];
+        if (row) {
+            // Create a deterministic string representation of the row
+            const rowValues = columnNames.map(col => {
+                const val = row[col];
+                if (val === null) return 'null';
+                if (val === undefined) return 'undefined';
+                if (typeof val === 'object') return JSON.stringify(val);
+                return String(val);
+            });
+            rowStrings.push(`${idx}:${rowValues.join(',')}`);
+        }
+    }
+    
+    parts.push(`rows:${rowStrings.join(';')}`);
+    
+    return djb2Hash(parts.join('|'));
 }
 
 export function runCodeOnInputListsInVM(
@@ -389,9 +493,6 @@ export const assembleVegaChart = (
                 encodingObj["type"] = encoding.dtype;
             } else if (channel == 'column' || channel == 'row') {
                 // if the column or row channel and no dtype is specified, use nominal
-                encodingObj["type"] = 'nominal';
-            } else if (chartType == 'Grouped Bar Chart' && (channel == 'color' || channel == 'x')) {
-                // if the chart type is grouped bar chart and the channel is color or x, use nominal
                 encodingObj["type"] = 'nominal';
             }
             

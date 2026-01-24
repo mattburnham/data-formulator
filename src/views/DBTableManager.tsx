@@ -31,7 +31,10 @@ import {
   useTheme,
   Link,
   Checkbox,
-  Popover
+  Popover,
+  Switch,
+  Slider,
+  FormControlLabel
 } from '@mui/material';
 
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -44,7 +47,7 @@ import SearchIcon from '@mui/icons-material/Search';
 
 import { getUrls, fetchWithSession } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
-import { DictTable } from '../components/ComponentType';
+import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { Type } from '../data/types';
 import { useDispatch, useSelector } from 'react-redux';
 import { dfActions, dfSelectors, getSessionId } from '../app/dfSlice';
@@ -146,6 +149,16 @@ interface DBTable {
     row_count: number;
     sample_rows: any[];
     view_source: string | null;
+    // Source metadata for refreshable tables (from data loaders)
+    // Backend stores connection info; frontend manages refresh timing
+    source_metadata?: {
+        table_name: string;
+        data_loader_type: string;
+        data_loader_params: Record<string, any>;
+        source_table_name?: string;
+        source_query?: string;
+        last_refreshed?: string;
+    } | null;
 }
 
 interface ColumnStatistics {
@@ -193,6 +206,23 @@ export const DBManagerPane: React.FC<{
     const [showViews, setShowViews] = useState<boolean>(false);
     const dbFileInputRef = useRef<HTMLInputElement>(null);
     const menuButtonRef = useRef<HTMLButtonElement>(null);
+    
+    // Watch/auto-refresh settings for the currently selected table
+    const [watchEnabled, setWatchEnabled] = useState<boolean>(false);
+    const [watchInterval, setWatchInterval] = useState<number>(60);
+    
+    // Reset watch settings when selected table changes
+    useEffect(() => {
+        setWatchEnabled(false);
+        setWatchInterval(60);
+    }, [selectedTabKey]);
+    
+    // Helper to format interval for display
+    const formatInterval = (seconds: number) => {
+        if (seconds < 60) return `${seconds}s`;
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+        return `${Math.floor(seconds / 3600)}h`;
+    };
 
     let setSystemMessage = (content: string, severity: "error" | "warning" | "info" | "success") => {
         dispatch(dfActions.addMessages({
@@ -218,17 +248,19 @@ export const DBManagerPane: React.FC<{
     }, [dbTables, selectedDataLoader]);
 
     // Fetch list of tables
-    const fetchTables = async () => {
-        if (serverConfig.DISABLE_DATABASE) return;
+    const fetchTables = async (): Promise<DBTable[] | undefined> => {
+        if (serverConfig.DISABLE_DATABASE) return undefined;
         try {
             const response = await fetchWithSession(getUrls().LIST_TABLES, { method: 'GET' }, dispatch);
             const data = await response.json();
             if (data.status === 'success') {
                 setDbTables(data.tables);
+                return data.tables;
             }
         } catch (error) {
             setSystemMessage('Failed to fetch tables, please check if the server is running', "error");
         }
+        return undefined;
     };
 
     const fetchDataLoaders = async () => {
@@ -423,7 +455,7 @@ export const DBManagerPane: React.FC<{
         }
     }, [selectedTabKey, selectedDataLoader, handleAnalyzeData]);
 
-    const handleAddTableToDF = (dbTable: DBTable) => {
+    const handleAddTableToDF = (dbTable: DBTable, refreshSettings?: {autoRefresh: boolean, refreshIntervalSeconds: number}) => {
         const convertSqlTypeToAppType = (sqlType: string): Type => {
             // Convert SQL types to application types
             sqlType = sqlType.toUpperCase();
@@ -438,6 +470,19 @@ export const DBManagerPane: React.FC<{
             } else {
                 return Type.String;
             }
+        };
+
+        // Build source config - backend stores connection details, frontend just manages refresh timing
+        const sourceMeta = dbTable.source_metadata;
+        const sourceConfig: DataSourceConfig = {
+            type: 'database',
+            databaseTable: dbTable.name,
+            // Frontend manages these refresh settings (from user selection)
+            autoRefresh: refreshSettings?.autoRefresh ?? false,
+            refreshIntervalSeconds: refreshSettings?.refreshIntervalSeconds ?? 60,
+            // Backend has connection info if source_metadata exists
+            canRefresh: sourceMeta != null,
+            lastRefreshed: Date.now()
         };
 
         let table: DictTable = {
@@ -459,7 +504,8 @@ export const DBManagerPane: React.FC<{
             },
             anchored: true, // by default, db tables are anchored
             createdBy: 'user',
-            attachedMetadata: ''
+            attachedMetadata: '',
+            source: sourceConfig
         }
        dispatch(dfActions.loadTable(table));
        dispatch(fetchFieldSemanticType(table));
@@ -1011,19 +1057,71 @@ export const DBManagerPane: React.FC<{
                             </Typography>
                         </Box>
                     ) : (
-                        <Button 
-                            variant="contained"
-                            size="small"
-                            sx={{ml: 'auto', textTransform: 'none'}}
-                            disabled={isUploading || dbTables.length === 0 || dbTables.find(t => t.name === selectedTabKey) === undefined}
-                            onClick={() => {
-                                let t = dbTables.find(t => t.name === selectedTabKey);
-                                if (t) {
-                                    handleAddTableToDF(t);
-                                }
-                            }}>
-                            Load Table
-                        </Button>
+                        <Box sx={{ ml: 2, display: 'flex', flexDirection: 'row', gap: 1 }}>
+                            {/* Watch settings - only show for tables that can be refreshed */}
+                            {currentTable.source_metadata && (
+                                <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={watchEnabled}
+                                                onChange={(e) => setWatchEnabled(e.target.checked)}
+                                                size="small"
+                                            />
+                                        }
+                                        label={
+                                            <Typography variant="body2" sx={{ fontSize: 12 }}>
+                                                Watch for updates
+                                            </Typography>
+                                        }
+                                        sx={{ mr: 0 }}
+                                    />
+                                    {watchEnabled && (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 100 }}>
+                                            <Typography variant="body2" sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                                every
+                                            </Typography>
+                                            <TextField
+                                                select
+                                                size="small"
+                                                value={watchInterval}
+                                                onChange={(e) => setWatchInterval(Number(e.target.value))}
+                                                sx={{ 
+                                                    minWidth: 70,
+                                                    '& .MuiInputBase-root': { fontSize: 11, height: 28 },
+                                                    '& .MuiSelect-select': { py: 0.5 }
+                                                }}
+                                            >
+                                                <MenuItem value={1}>1s</MenuItem>
+                                                <MenuItem value={10}>10s</MenuItem>
+                                                <MenuItem value={30}>30s</MenuItem>
+                                                <MenuItem value={60}>1m</MenuItem>
+                                                <MenuItem value={300}>5m</MenuItem>
+                                                <MenuItem value={600}>10m</MenuItem>
+                                                <MenuItem value={1800}>30m</MenuItem>
+                                                <MenuItem value={3600}>1h</MenuItem>
+                                            </TextField>
+                                        </Box>
+                                    )}
+                                </Box>
+                            )}
+                            <Button 
+                                variant="contained"
+                                size="small"
+                                sx={{ textTransform: 'none', ml: 'auto' }}
+                                disabled={isUploading || dbTables.length === 0 || dbTables.find(t => t.name === selectedTabKey) === undefined}
+                                onClick={() => {
+                                    let t = dbTables.find(t => t.name === selectedTabKey);
+                                    if (t) {
+                                        handleAddTableToDF(t, currentTable.source_metadata ? {
+                                            autoRefresh: watchEnabled,
+                                            refreshIntervalSeconds: watchInterval
+                                        } : undefined);
+                                    }
+                                }}>
+                                Load {watchEnabled? 'Streaming' : ''} Table {watchEnabled && currentTable.source_metadata ? `(watching every ${formatInterval(watchInterval)})` : ''}
+                            </Button>
+                        </Box>
                     )}
                 </Box>
             );
@@ -1118,6 +1216,7 @@ export const DBManagerPane: React.FC<{
                     <CircularProgress size={60} thickness={5} />
                 </Box>
             )}
+            
         </Box>
     );
   
@@ -1135,7 +1234,8 @@ export const DataLoaderForm: React.FC<{
     const theme = useTheme();
     const params = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams[dataLoaderType] ?? {});
 
-    const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});    let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
+    const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
+    let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
     let [tableFilter, setTableFilter] = useState<string>("");
     const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
 
@@ -1259,7 +1359,9 @@ export const DataLoaderForm: React.FC<{
                                 const finalTableNames = actualTableNames.length > 0 ? actualTableNames : tablesToImport;
                                 onFinish("success", `Successfully imported ${tablesToImport.length} table(s)`, finalTableNames);
                             } else {
-                                onFinish("error", `Failed to import some tables: ${errors.map(e => e.error).join(", ")}`);
+                                // Backend returns 'message' field for errors
+                                const errorMessages = errors.map(e => e.message || e.error || 'Unknown error').filter(Boolean);
+                                onFinish("error", `Failed to import some tables: ${errorMessages.join(", ")}`);
                             }
                         })
                         .catch(error => {

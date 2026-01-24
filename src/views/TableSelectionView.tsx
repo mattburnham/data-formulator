@@ -6,7 +6,8 @@ import { useEffect } from 'react';
 
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
-import { Button, Card, Paper } from '@mui/material';
+import { Button, Card, Paper, Chip } from '@mui/material';
+import StreamIcon from '@mui/icons-material/Stream';
 import { CustomReactTable } from './ReactTable';
 import { createTableFromFromObjectArray } from '../data/utils';
 
@@ -21,6 +22,9 @@ export interface DatasetMetadata {
         format: string;
         sample: any[];
     }[];
+    // Live/streaming dataset properties
+    live?: boolean;
+    refreshIntervalSeconds?: number;
 }
 
 export interface DatasetSelectionViewProps {
@@ -101,7 +105,12 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
                                 borderColor: 'primary.main',
                             }}
                         >
-                            {title}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                {datasets[i]?.live && (
+                                    <StreamIcon sx={{ fontSize: 14, color: 'success.main' }} />
+                                )}
+                                <span>{title}</span>
+                            </Box>
                         </Button>
                     ))}
                 </Box>
@@ -142,18 +151,35 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
                             )
                         });
                         
+                        // Format refresh interval for display
+                        const formatRefreshInterval = (seconds: number) => {
+                            if (seconds < 60) return `${seconds}s`;
+                            if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+                            return `${Math.floor(seconds / 3600)}h`;
+                        };
+                        
                         return (
                             <Box key={i}>
-                                <Box sx={{mb: 1, gap: 1, maxWidth: 800, display: "flex", alignItems: "center"}}>
-                                    <Typography sx={{fontSize: 12}}>
-                                        {dataset.description} <Typography variant="caption" sx={{color: "primary.light", fontSize: 10, mx: 0.5}}>[from {dataset.source}]</Typography> 
+                                <Box sx={{mb: 1, gap: 1, maxWidth: 800, display: "flex", alignItems: "center", flexWrap: "wrap"}}>
+                                    <Typography sx={{fontSize: 12, flex: 1, minWidth: 200}}>
+                                        {dataset.description} <Typography variant="caption" sx={{color: "primary.light", fontSize: 10, mx: 0.5}}>[from {dataset.source}]</Typography>
                                     </Typography>
+                                    {dataset.live && dataset.refreshIntervalSeconds && (
+                                        <Chip 
+                                            icon={<StreamIcon sx={{ fontSize: 14 }} />}
+                                            label={`Auto-refresh: ${formatRefreshInterval(dataset.refreshIntervalSeconds)}`}
+                                            size="small"
+                                            color="success"
+                                            variant="outlined"
+                                            sx={{ fontSize: 10, height: 22 }}
+                                        />
+                                    )}
                                     <Box sx={{marginLeft: "auto", flexShrink: 0}} >
                                         <Button size="small" variant="contained" 
                                                 onClick={(event: React.MouseEvent<HTMLElement>) => {
                                                     handleSelectDataset(dataset);
                                                 }}>
-                                            load dataset
+                                            {dataset.live ? 'load live data' : 'load dataset'}
                                         </Button>
                                     </Box>
                                 </Box>

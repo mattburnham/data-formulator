@@ -20,12 +20,18 @@ import { getIconFromType } from './ViewUtils';
 import { IconButton, TableSortLabel, Typography } from '@mui/material';
 
 import _ from 'lodash';
-import { FieldSource } from '../components/ComponentType';
+import { FieldSource, FieldItem } from '../components/ComponentType';
 
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import CasinoIcon from '@mui/icons-material/Casino';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import UnfoldMoreIcon from '@mui/icons-material/UnfoldMore';
 import { getUrls } from '../app/utils';
+import { useDrag } from 'react-dnd';
+import { useSelector } from 'react-redux';
+import { DataFormulatorState } from '../app/dfSlice';
 
 export interface ColumnDef {
     id: string;
@@ -68,6 +74,170 @@ function getComparator<Key extends keyof any>(
         ? (a, b) => descendingComparator(a, b, orderBy)
         : (a, b) => -descendingComparator(a, b, orderBy);
 }
+
+// Get color for field source hover highlight
+function getColorForFieldSource(source: string | undefined, theme: any): string {
+    if (!source) {
+        return theme.palette.primary.main; // Default to primary for original fields
+    }
+    
+    switch (source) {
+        case "derived":
+            return theme.palette.derived.main; // Yellow/gold for derived fields
+        case "custom":
+            return theme.palette.custom.main; // Orange for custom fields
+        case "original":
+        default:
+            return theme.palette.primary.main; // Blue for original fields
+    }
+}
+
+// Draggable header component
+interface DraggableHeaderProps {
+    columnDef: ColumnDef;
+    orderBy: string | undefined;
+    order: 'asc' | 'desc';
+    onSortClick: () => void;
+    tableId: string;
+}
+
+const DraggableHeader: React.FC<DraggableHeaderProps> = ({ 
+    columnDef, orderBy, order, onSortClick, tableId 
+}) => {
+    const theme = useTheme();
+    const conceptShelfItems = useSelector((state: DataFormulatorState) => state.conceptShelfItems);
+    
+    // Find the corresponding FieldItem for this column
+    // Try to find by name first, then by constructing the ID for original fields
+    const field = conceptShelfItems.find(f => f.name === columnDef.id) || 
+                  conceptShelfItems.find(f => f.id === `original--${tableId}--${columnDef.id}`);
+    
+    // Only make draggable if we have a field
+    // react-dnd has a drag threshold, so clicks will still work for sorting
+    const [{ isDragging }, dragSource, dragPreview] = useDrag(() => ({
+        type: "concept-card",
+        item: field ? { 
+            type: 'concept-card', 
+            fieldID: field.id, 
+            source: "conceptShelf" 
+        } : undefined,
+        canDrag: !!field,
+        collect: (monitor) => ({
+            isDragging: monitor.isDragging(),
+            handlerId: monitor.getHandlerId(),
+        }),
+    }), [field]);
+
+    let backgroundColor = "white";
+    let borderBottomColor = theme.palette.primary.main;
+    if (columnDef.source == "custom") {
+        backgroundColor = alpha(theme.palette.custom.main, 0.05);
+        borderBottomColor = theme.palette.custom.main;
+    } else {
+        backgroundColor = alpha(theme.palette.primary.main, 0.05);
+        borderBottomColor = theme.palette.primary.main;
+    }
+
+    const opacity = isDragging ? 0.3 : 1;
+    const cursorStyle = field ? (isDragging ? "grabbing" : "grab") : "default";
+    
+    // Enhanced background color on hover for draggable headers - based on field source (derived/original)
+    const hoverBackgroundColor = field 
+        ? alpha(getColorForFieldSource(field.source, theme), 0.1)
+        : backgroundColor;
+    
+    // Determine sort icon
+    const getSortIcon = () => {
+        if (orderBy !== columnDef.id) {
+            return <UnfoldMoreIcon sx={{ fontSize: 16 }} />;
+        }
+        return order === 'asc' 
+            ? <ArrowUpwardIcon sx={{ fontSize: 16 }} />
+            : <ArrowDownwardIcon sx={{ fontSize: 16 }} />;
+    };
+
+    return (
+        <Box 
+            className="data-view-header-container" 
+            ref={field ? dragSource : dragPreview}
+            sx={{ 
+                backgroundColor: backgroundColor, 
+                borderBottomColor, 
+                borderBottomWidth: '2px', 
+                borderBottomStyle: 'solid',
+                opacity,
+                cursor: cursorStyle,
+                display: 'flex',
+                alignItems: 'center',
+                position: 'relative',
+                transition: 'background-color 0.2s ease, box-shadow 0.2s ease',
+                // Ensure cursor applies to TableSortLabel and its children, but not IconButton
+                '& .data-view-header-title, & .data-view-header-title *': {
+                    cursor: cursorStyle,
+                },
+                ...(field && {
+                    '&:hover': {
+                        backgroundColor: hoverBackgroundColor,
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+                    },
+                }),
+            }}
+        >
+            {/* Main content area - draggable for concepts, using original TableSortLabel structure */}
+            <TableSortLabel
+                className="data-view-header-title"
+                sx={{ 
+                    display: "flex", 
+                    flexDirection: "row", 
+                    flex: 1,
+                    width: 'calc(100% - 24px)',
+                    cursor: cursorStyle, // Inherit cursor from parent
+                    '& .MuiTableSortLabel-icon': {
+                        display: 'none',
+                    },
+                }}
+                active={orderBy === columnDef.id}
+                direction={orderBy === columnDef.id ? order : 'asc'}
+                onClick={(e) => {
+                    // Prevent sort when dragging
+                    if (!isDragging) {
+                        e.stopPropagation();
+                        onSortClick();
+                    }
+                }}
+            >
+                <span role="img" style={{ fontSize: "inherit", padding: "2px", display: "inline-flex", alignItems: "center" }}>
+                    {getIconFromType(columnDef.dataType)}
+                </span>
+                <Typography sx={{fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>
+                    {columnDef.label}
+                </Typography>
+            </TableSortLabel>
+            {/* Separate sort handler button */}
+            <Tooltip title={<Typography sx={{fontSize: 10}}>Sort by <b>{columnDef.label}</b></Typography>}>
+                <IconButton
+                    size="small"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onSortClick();
+                    }}
+                    sx={{
+                        padding: '2px',
+                        marginLeft: '4px',
+                        marginRight: '2px',
+                        opacity: orderBy === columnDef.id ? 1 : 0.5,
+                        '&:hover': {
+                            opacity: 1,
+                            backgroundColor: alpha(theme.palette.action.hover, 0.2),
+                        },
+                    }}
+                >
+                    {getSortIcon()}
+                </IconButton>
+            </Tooltip>
+        </Box>
+    );
+};
 
 export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({ 
     tableId, rows, tableName, columnDefs, rowCount, virtual }) => {
@@ -192,16 +362,6 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                         return (
                             <TableRow key='header-fixed' style={{ paddingRight: 0, marginRight: '17px', height: '24px'}}>
                                 {columnDefs.map((columnDef, index) => {
-                                    let backgroundColor = "white";
-                                    let borderBottomColor = theme.palette.primary.main;
-                                    if (columnDef.source == "custom") {
-                                        backgroundColor = alpha(theme.palette.custom.main, 0.05);
-                                        borderBottomColor = theme.palette.custom.main;
-                                    } else {
-                                        backgroundColor = "white";
-                                        borderBottomColor = theme.palette.primary.main;
-                                    }
-
                                     return (
                                         <TableCell
                                             className='data-view-header-cell'
@@ -209,43 +369,31 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                                             align={columnDef.align}
                                             sx={{p: 0, minWidth: columnDef.minWidth, width: columnDef.width,}}
                                         >
-                                            <Tooltip title={`${columnDef.label}`} >
-                                                <Box className="data-view-header-container" 
-                                                     sx={{ backgroundColor, borderBottomColor, borderBottomWidth: '2px', borderBottomStyle: 'solid'}}>
-                                                    <TableSortLabel
-                                                    className="data-view-header-title"
-                                                    sx={{ display: "flex", flexDirection: "row", width: "100%" }}
-                                                    active={orderBy === columnDef.id}
-                                                    direction={orderBy === columnDef.id ? order : 'asc'}
-                                                    onClick={() => {
-                                                        let newOrder: 'asc' | 'desc' = 'asc';
-                                                        let newOrderBy : string | undefined = columnDef.id;
-                                                        if (orderBy === columnDef.id && order === 'asc') {
-                                                            newOrder = 'desc';
-                                                        } else if (orderBy === columnDef.id && order === 'desc') {
-                                                            newOrder = 'asc';
-                                                            newOrderBy = undefined;
-                                                        } else {
-                                                            newOrder = 'asc';
-                                                        }
+                                            <DraggableHeader
+                                                columnDef={columnDef}
+                                                orderBy={orderBy}
+                                                order={order}
+                                                tableId={tableId}
+                                                onSortClick={() => {
+                                                    let newOrder: 'asc' | 'desc' = 'asc';
+                                                    let newOrderBy : string | undefined = columnDef.id;
+                                                    if (orderBy === columnDef.id && order === 'asc') {
+                                                        newOrder = 'desc';
+                                                    } else if (orderBy === columnDef.id && order === 'desc') {
+                                                        newOrder = 'asc';
+                                                        newOrderBy = undefined;
+                                                    } else {
+                                                        newOrder = 'asc';
+                                                    }
 
-                                                        setOrder(newOrder);
-                                                        setOrderBy(newOrderBy);
-                                                        
-                                                        if (virtual) {
-                                                            fetchVirtualData(newOrderBy ? [newOrderBy] : [], newOrder);
-                                                        }
-                                                    }}
-                                                >
-                                                    <span role="img" style={{ fontSize: "inherit", padding: "2px", display: "inline-flex", alignItems: "center" }}>
-                                                        {getIconFromType(columnDef.dataType)}
-                                                    </span>
-                                                    <Typography className="data-view-header-name">
-                                                        {columnDef.label}
-                                                    </Typography>
-                                                </TableSortLabel>
-                                            </Box>
-                                            </Tooltip>
+                                                    setOrder(newOrder);
+                                                    setOrderBy(newOrderBy);
+                                                    
+                                                    if (virtual) {
+                                                        fetchVirtualData(newOrderBy ? [newOrderBy] : [], newOrder);
+                                                    }
+                                                }}
+                                            />
                                         </TableCell>
                                     );
                                 })}
@@ -256,12 +404,12 @@ export const SelectableDataGrid: React.FC<SelectableDataGridProps> = ({
                         return (
                             <>
                                 {columnDefs.map((column, colIndex) => {
-                                    let backgroundColor = "white";
-                                    if (column.source == "custom") {
-                                        backgroundColor = alpha(theme.palette.custom.main, 0.05);
-                                    } else {
-                                        backgroundColor = "rgba(255,255,255,0.05)";
-                                    }
+                                    let backgroundColor = "rgba(255,255,255,0.05)";
+                                    // if (column.source == "custom") {
+                                    //     backgroundColor = alpha(theme.palette.custom.main, 0.03);
+                                    // } else {
+                                    //     backgroundColor = "rgba(255,255,255,0.05)";
+                                    // }
 
                                     return (
                                         <TableCell

@@ -216,32 +216,61 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
     return f"{field_name} -- type: {df[field_name].dtype}, values: {val_str}"
 
 def generate_data_summary(input_tables, include_data_samples=True, field_sample_size=7, max_val_chars=140):
+    """
+    Generate a natural, well-organized summary of input tables.
+    
+    Organization approach:
+    - Each table is clearly separated with a header
+    - Information flows logically: Overview → Schema → Examples
+    - Consistent section ordering for better readability
+    """
     
     def assemble_table_summary(input_table, idx):
-        table_id = f'table{idx+1}'
         name = string_to_py_varname(input_table["name"])
         rows = input_table["rows"]
         description = input_table.get("attached_metadata", "")
         
         df = pd.DataFrame(rows)
-        fields_summary = '\n'.join(['\t*' + get_field_summary(fname, df, field_sample_size, max_val_chars)  for fname in list(df.columns.values)])
+        num_rows = len(df)
+        num_cols = len(df.columns)
+        
+        # Build sections in logical order: Overview → Schema → Examples
+        sections = []
+        
+        # 1. Table Header with basic stats
+        header = f"## Table {idx + 1}: {name}"
+        if num_rows > 0:
+            header += f" ({num_rows:,} rows × {num_cols} columns)"
+        sections.append(header)
+        sections.append("")  # Empty line for spacing
+        
+        # 2. Description (if available) - provides context first
+        if description:
+            sections.append(f"### Description\n{description}\n")
+        
+        # 3. Schema/Fields - core structure information
+        fields_summary = '\n'.join(['  - ' + get_field_summary(fname, df, field_sample_size, max_val_chars) 
+                                    for fname in list(df.columns.values)])
+        sections.append(f"### Schema ({num_cols} fields)\n{fields_summary}\n")
+        
+        # 4. Sample data (if requested) - concrete examples last
+        if include_data_samples and num_rows > 0:
+            sample_df = pd.DataFrame(rows[:5])
+            sections.append(f"### Sample Data (first 5 rows)\n```\n{sample_df.to_string()}\n```\n")
+        
+        return '\n'.join(sections)
 
-        fields_section = f'## fields\n{fields_summary}\n\n'
-        sample_section = f'## sample\n{pd.DataFrame(rows[:5]).to_string()}\n......\n\n' if include_data_samples else ''
-        description_section = f'## description\n{description}\n\n' if description else ''
-
-        summary_str = f'''# {table_id} ({name})\n\n{description_section}{fields_section}{sample_section}'''
-        return summary_str
-
+    # Join tables with clear separators
     table_summaries = [assemble_table_summary(input_table, i) for i, input_table in enumerate(input_tables)]
     
-    # Join with newline (extracted from f-string for Python 3.9/3.10 compatibility)
-    joined_summaries = '\n'.join(table_summaries)
+    # Add visual separator between tables (except for the last one)
+    separator = "\n" + "─" * 60 + "\n\n"
+    joined_summaries = separator.join(table_summaries)
     
-    full_summary = f'''Here are our datasets, here are their summaries and samples:
-
-{joined_summaries}
-'''
-
+    # Natural introduction
+    num_tables = len(input_tables)
+    intro = f"Here are {num_tables} dataset{'s' if num_tables != 1 else ''} with their summaries:\n\n"
+    
+    full_summary = intro + joined_summaries
     return full_summary
 

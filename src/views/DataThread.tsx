@@ -25,6 +25,8 @@ import {
     Badge,
     Menu,
     MenuItem,
+    Switch,
+    FormControlLabel,
 } from '@mui/material';
 
 import { VegaLite } from 'react-vega'
@@ -65,6 +67,7 @@ import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import StreamIcon from '@mui/icons-material/Stream';
 
 import { alpha } from '@mui/material/styles';
 
@@ -72,6 +75,7 @@ import { dfSelectors } from '../app/dfSlice';
 import { RefreshDataDialog } from './RefreshDataDialog';
 import { getUrls } from '../app/utils';
 import { AppDispatch } from '../app/store';
+import StopIcon from '@mui/icons-material/Stop';
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
     <Box sx={{ 
@@ -117,6 +121,137 @@ export const ThinkingBanner = (message: string, sx?: SxProps) => (
     </Box>
 );
 
+
+// Streaming Settings Popup Component
+const StreamingSettingsPopup = memo<{
+    open: boolean;
+    anchorEl: HTMLElement | null;
+    onClose: () => void;
+    table: DictTable;
+    onUpdateSettings: (autoRefresh: boolean, refreshIntervalSeconds?: number) => void;
+}>(({ open, anchorEl, onClose, table, onUpdateSettings }) => {
+    const [refreshInterval, setRefreshInterval] = useState<number>(
+        table.source?.refreshIntervalSeconds || 60
+    );
+    const [autoRefresh, setAutoRefresh] = useState<boolean>(
+        table.source?.autoRefresh || false
+    );
+    const [selectMenuOpen, setSelectMenuOpen] = useState<boolean>(false);
+
+    useEffect(() => {
+        if (open) {
+            setRefreshInterval(table.source?.refreshIntervalSeconds || 60);
+            setAutoRefresh(table.source?.autoRefresh || false);
+        }
+    }, [open, table.source]);
+
+    const handleAutoRefreshChange = (enabled: boolean) => {
+        setAutoRefresh(enabled);
+        onUpdateSettings(enabled, enabled ? refreshInterval : undefined);
+        if (!enabled) {
+            onClose();
+        }
+    };
+
+    const handleIntervalChange = (interval: number) => {
+        setRefreshInterval(interval);
+        if (autoRefresh) {
+            onUpdateSettings(true, interval);
+        }
+    };
+
+    const handleClickAway = (event: MouseEvent | TouchEvent) => {
+        // Don't close if the select menu is open
+        if (selectMenuOpen) {
+            return;
+        }
+        // Don't close if clicking on the select menu or menu items
+        const target = event.target as HTMLElement;
+        if (
+            target.closest('.MuiMenu-root') ||
+            target.closest('.MuiPaper-root')?.classList.contains('MuiMenu-paper') ||
+            target.closest('[role="menuitem"]') ||
+            target.closest('[role="listbox"]')
+        ) {
+            return;
+        }
+        onClose();
+    };
+
+    return (
+        <Popper
+            open={open}
+            anchorEl={anchorEl}
+            placement="bottom-start"
+            style={{ zIndex: 1300 }}
+        >
+            <ClickAwayListener onClickAway={handleClickAway} mouseEvent="onMouseDown">
+                <Paper
+                    elevation={8}
+                    sx={{
+                        fontSize: 12,
+                        p: 1.5,
+                        mt: 1,
+                        border: '1px solid',
+                        borderColor: 'divider'
+                    }}
+                >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'nowrap' }}>
+                        <FormControlLabel
+                            control={
+                                <Switch
+                                    checked={autoRefresh}
+                                    onChange={(e) => handleAutoRefreshChange(e.target.checked)}
+                                    size="small"
+                                />
+                            }
+                            label={
+                                <Typography variant="body2" sx={{ fontSize: 11 }}>
+                                    Watch for updates
+                                </Typography>
+                            }
+                            sx={{ mr: 0 }}
+                        />
+                        {autoRefresh && (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 100 }}>
+                                <Typography variant="body2" sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                    every
+                                </Typography>
+                                <TextField
+                                    select
+                                    size="small"
+                                    value={refreshInterval}
+                                    onChange={(e) => handleIntervalChange(Number(e.target.value))}
+                                    slotProps={{
+                                        select: {
+                                            open: selectMenuOpen,
+                                            onOpen: () => setSelectMenuOpen(true),
+                                            onClose: () => setSelectMenuOpen(false)
+                                        }
+                                    }}
+                                    sx={{ 
+                                        minWidth: 70,
+                                        '& .MuiInputBase-root': { fontSize: 11, height: 28 },
+                                        '& .MuiSelect-select': { py: 0.5 }
+                                    }}
+                                >
+                                    <MenuItem value={1}>1s</MenuItem>
+                                    <MenuItem value={10}>10s</MenuItem>
+                                    <MenuItem value={30}>30s</MenuItem>
+                                    <MenuItem value={60}>1m</MenuItem>
+                                    <MenuItem value={300}>5m</MenuItem>
+                                    <MenuItem value={600}>10m</MenuItem>
+                                    <MenuItem value={1800}>30m</MenuItem>
+                                    <MenuItem value={3600}>1h</MenuItem>
+                                </TextField>
+                            </Box>
+                        )}
+                    </Box>
+                </Paper>
+            </ClickAwayListener>
+        </Popper>
+    );
+});
 
 // Metadata Popup Component
 const MetadataPopup = memo<{
@@ -557,6 +692,11 @@ let SingleThreadGroupView: FC<{
     const [selectedTableForRefresh, setSelectedTableForRefresh] = useState<DictTable | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
 
+    // Streaming settings popup state
+    const [streamingSettingsPopupOpen, setStreamingSettingsPopupOpen] = useState(false);
+    const [selectedTableForStreamingSettings, setSelectedTableForStreamingSettings] = useState<DictTable | null>(null);
+    const [streamingSettingsAnchorEl, setStreamingSettingsAnchorEl] = useState<HTMLElement | null>(null);
+
     let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
         dispatch(dfActions.updateTableDisplayId({
             tableId: tableId,
@@ -606,6 +746,29 @@ let SingleThreadGroupView: FC<{
     const handleCloseRefreshDialog = () => {
         setRefreshDialogOpen(false);
         setSelectedTableForRefresh(null);
+    };
+
+    // Streaming settings handlers
+    const handleOpenStreamingSettingsPopup = (table: DictTable, anchorEl: HTMLElement) => {
+        setSelectedTableForStreamingSettings(table);
+        setStreamingSettingsAnchorEl(anchorEl);
+        setStreamingSettingsPopupOpen(true);
+    };
+
+    const handleCloseStreamingSettingsPopup = () => {
+        setStreamingSettingsPopupOpen(false);
+        setSelectedTableForStreamingSettings(null);
+        setStreamingSettingsAnchorEl(null);
+    };
+
+    const handleUpdateStreamingSettings = (autoRefresh: boolean, refreshIntervalSeconds?: number) => {
+        if (selectedTableForStreamingSettings) {
+            dispatch(dfActions.updateTableSourceRefreshSettings({
+                tableId: selectedTableForStreamingSettings.id,
+                autoRefresh,
+                refreshIntervalSeconds
+            }));
+        }
     };
 
     // Function to refresh derived tables
@@ -796,13 +959,22 @@ let SingleThreadGroupView: FC<{
         // only charts without dependency can be deleted
         let tableDeleteEnabled = !tables.some(t => t.derive?.trigger.tableId == tableId);
 
-        let tableCardIcon =  ( table?.anchored ? 
-            <AnchorIcon sx={{ 
+        const iconColor = tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.6)';
+        const iconOpacity = table?.anchored ? 1 : 0.5;
+        
+        let tableCardIcon = table?.virtual ? (
+            <CloudQueueIcon sx={{ 
                 fontSize: 16,
-                color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
-                fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
-            }} /> : 
-            <TableRowsIcon sx={{ fontSize: 16 }} /> )
+                color: iconColor,
+                opacity: iconOpacity,
+            }} />
+        ) : (
+            <TableRowsIcon sx={{ 
+                fontSize: 16,
+                color: iconColor,
+                opacity: iconOpacity,
+            }} />
+        )
 
         let regularTableBox = <Box key={`regular-table-box-${tableId}`} ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
             sx={{ padding: '0px' }}>
@@ -824,27 +996,83 @@ let SingleThreadGroupView: FC<{
                 }}>
                 <Box sx={{ margin: '0px', display: 'flex' }}>
                     <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
-                        <IconButton color="primary" sx={{
-                            minWidth: 0, 
-                            padding: 0.25,
-                            '&:hover': {
-                                transform: 'scale(1.3)',
-                                transition: 'all 0.1s linear'
-                            },
-                            '&.Mui-disabled': {
-                                color: 'rgba(0, 0, 0, 0.5)'
-                            }
-                        }} 
-                        size="small" 
-                        disabled={table?.derive == undefined || tables.some(t => t.derive?.trigger.tableId == tableId)}
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
-                        }}>
-                            {tableCardIcon}
-                        </IconButton>
+                        {/* For non-derived tables: icon opens menu; for derived tables: icon toggles anchored */}
+                        {table?.derive == undefined ? (
+                            <Tooltip title="more options">
+                                <IconButton color="primary" sx={{
+                                    minWidth: 0, 
+                                    padding: 0.25,
+                                    '&:hover': {
+                                        transform: 'scale(1.3)',
+                                        transition: 'all 0.1s linear'
+                                    },
+                                }} 
+                                size="small" 
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleOpenTableMenu(table!, event.currentTarget);
+                                }}>
+                                    {tableCardIcon}
+                                </IconButton>
+                            </Tooltip>
+                        ) : (
+                            <IconButton color="primary" sx={{
+                                minWidth: 0, 
+                                padding: 0.25,
+                                '&:hover': {
+                                    transform: 'scale(1.3)',
+                                    transition: 'all 0.1s linear'
+                                },
+                                '&.Mui-disabled': {
+                                    color: 'rgba(0, 0, 0, 0.5)'
+                                }
+                            }} 
+                            size="small" 
+                            disabled={tables.some(t => t.derive?.trigger.tableId == tableId)}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
+                            }}>
+                                {tableCardIcon}
+                            </IconButton>
+                        )}
                         <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center' }}>
-                            {table?.virtual? <CloudQueueIcon sx={{ fontSize: 10, }} /> : ""}
+                            {/* Only show streaming icon when actively watching for updates */}
+                            {(table?.source?.type === 'stream' || table?.source?.type === 'database') && table?.source?.autoRefresh ? (
+                                <Tooltip title={`Auto-refresh every ${
+                                    (table.source?.refreshIntervalSeconds || 60) < 60 
+                                        ? `${table.source?.refreshIntervalSeconds}s` 
+                                        : (table.source?.refreshIntervalSeconds || 60) < 3600 
+                                            ? `${Math.floor((table.source?.refreshIntervalSeconds || 60) / 60)}m`
+                                            : `${Math.floor((table.source?.refreshIntervalSeconds || 60) / 3600)}h`
+                                } - Click to change interval or stop watching`}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleOpenStreamingSettingsPopup(table!, event.currentTarget);
+                                        }}
+                                        sx={{
+                                            padding: 0.25,
+                                            '&:hover': {
+                                                transform: 'scale(1.2)',
+                                                transition: 'all 0.1s linear'
+                                            }
+                                        }}
+                                    >
+                                        <StreamIcon sx={{ 
+                                            fontSize: 12, 
+                                            color: theme.palette.success.main,
+                                            animation: 'pulse 2s infinite',
+                                            '@keyframes pulse': {
+                                                '0%': { opacity: 1 },
+                                                '50%': { opacity: 0.5 },
+                                                '100%': { opacity: 1 },
+                                            },
+                                        }} />
+                                    </IconButton>
+                                </Tooltip>
+                            ) : ""}
                             {focusedTableId == tableId ? <EditableTableName
                                 initialValue={table?.displayId || tableId}
                                 tableId={tableId}
@@ -853,7 +1081,7 @@ let SingleThreadGroupView: FC<{
                                 textAlign: 'center',
                                 color:  'rgba(0,0,0,0.7)', 
                                 maxWidth: '90px',
-                                ml: table?.virtual ? 0.5 : 0,
+                                ml: table?.virtual || ((table?.source?.type === 'stream' || table?.source?.type === 'database') && table?.source?.autoRefresh) ? 0.5 : 0,
                                 wordWrap: 'break-word',
                                 whiteSpace: 'normal'
                             }}>{table?.displayId || tableId}</Typography>}
@@ -875,46 +1103,21 @@ let SingleThreadGroupView: FC<{
                             </IconButton>
                         </Tooltip>
                         
-                        {/* For non-derived, non-virtual tables: show dropdown menu with metadata, refresh, delete */}
-                        {table?.derive == undefined && !table?.virtual && (
-                            <Tooltip key="table-menu-btn-tooltip" title="more options">
-                                <IconButton 
-                                    aria-label="more options" 
-                                    size="small" 
-                                    sx={{ 
-                                        padding: 0.25, 
-                                        '&:hover': {
-                                            transform: 'scale(1.2)',
-                                            transition: 'all 0.1s linear'
-                                        } 
-                                    }}
+                        {/* Delete button - shown for all deletable tables */}
+                        {tableDeleteEnabled && (
+                            <Tooltip key="delete-table-btn-tooltip" title="delete table">
+                                <IconButton aria-label="delete" size="small" sx={{ padding: 0.25, '&:hover': {
+                                    transform: 'scale(1.2)',
+                                    transition: 'all 0.1s linear'
+                                    } }}
                                     onClick={(event) => {
                                         event.stopPropagation();
-                                        handleOpenTableMenu(table!, event.currentTarget);
+                                        dispatch(dfActions.deleteTable(tableId));
                                     }}
                                 >
-                                    <MoreVertIcon fontSize="small" sx={{ fontSize: 18, color: 'text.secondary' }}/>
+                                    <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
                                 </IconButton>
                             </Tooltip>
-                        )}
-
-                        {/* For derived tables or virtual tables: show individual buttons */}
-                        {(table?.derive != undefined || table?.virtual) && (
-                            <>
-                                {tableDeleteEnabled && <Tooltip key="delete-table-btn-tooltip" title="delete table">
-                                    <IconButton aria-label="delete" size="small" sx={{ padding: 0.25, '&:hover': {
-                                        transform: 'scale(1.2)',
-                                        transition: 'all 0.1s linear'
-                                        } }}
-                                        onClick={(event) => {
-                                            event.stopPropagation();
-                                            dispatch(dfActions.deleteTable(tableId));
-                                        }}
-                                    >
-                                        <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
-                                    </IconButton>
-                                </Tooltip>}
-                            </>
                         )}
                     </ButtonGroup>
                 </Box>
@@ -1072,32 +1275,39 @@ let SingleThreadGroupView: FC<{
                         }}/>
                         {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
                     </MenuItem>
-                    <MenuItem 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            if (selectedTableForMenu) {
-                                handleOpenRefreshDialog(selectedTableForMenu);
-                            }
-                        }}
-                        sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-                    >
-                        <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
-                        Refresh data
-                    </MenuItem>
-                    <MenuItem 
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            if (selectedTableForMenu) {
-                                dispatch(dfActions.deleteTable(selectedTableForMenu.id));
-                            }
-                            handleCloseTableMenu();
-                        }}
-                        disabled={selectedTableForMenu ? tables.some(t => t.derive?.trigger.tableId === selectedTableForMenu.id) : true}
-                        sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
-                    >
-                        <DeleteIcon sx={{ fontSize: 16 }} color='warning'/>
-                        Delete table
-                    </MenuItem>
+                    {/* Watch for updates option - only shown when table has stream/database source but not actively watching */}
+                    {selectedTableForMenu && 
+                     (selectedTableForMenu.source?.type === 'stream' || selectedTableForMenu.source?.type === 'database') && 
+                     (
+                        <MenuItem 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (selectedTableForMenu) {
+                                    handleOpenStreamingSettingsPopup(selectedTableForMenu, tableMenuAnchorEl!);
+                                }
+                                handleCloseTableMenu();
+                            }}
+                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                        >
+                            <StreamIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
+                            Watch for updates
+                        </MenuItem>
+                    )}
+                    {/* Refresh data - hidden for database tables */}
+                    {selectedTableForMenu?.source?.type !== 'database' && (
+                        <MenuItem 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (selectedTableForMenu) {
+                                    handleOpenRefreshDialog(selectedTableForMenu);
+                                }
+                            }}
+                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                        >
+                            <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
+                            Refresh data
+                        </MenuItem>
+                    )}
                 </Menu>
                 {selectedTableForRefresh && (
                     <RefreshDataDialog
@@ -1105,6 +1315,15 @@ let SingleThreadGroupView: FC<{
                         onClose={handleCloseRefreshDialog}
                         table={selectedTableForRefresh}
                         onRefreshComplete={handleRefreshComplete}
+                    />
+                )}
+                {selectedTableForStreamingSettings && (
+                    <StreamingSettingsPopup
+                        open={streamingSettingsPopupOpen}
+                        anchorEl={streamingSettingsAnchorEl}
+                        onClose={handleCloseStreamingSettingsPopup}
+                        table={selectedTableForStreamingSettings}
+                        onUpdateSettings={handleUpdateStreamingSettings}
                     />
                 )}
             </Box>
@@ -1194,18 +1413,39 @@ let SingleThreadGroupView: FC<{
                 }}/>
                 {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
             </MenuItem>
-            <MenuItem 
-                onClick={(e) => {
-                    e.stopPropagation();
-                    if (selectedTableForMenu) {
-                        handleOpenRefreshDialog(selectedTableForMenu);
-                    }
-                }}
-                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
-            >
-                <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
-                Refresh data
-            </MenuItem>
+            {/* Watch for updates option - only shown when table has stream/database source but not actively watching */}
+            {selectedTableForMenu && 
+             (selectedTableForMenu.source?.type === 'stream' || selectedTableForMenu.source?.type === 'database') && 
+             !selectedTableForMenu.source?.autoRefresh && (
+                <MenuItem 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedTableForMenu) {
+                            handleOpenStreamingSettingsPopup(selectedTableForMenu, tableMenuAnchorEl!);
+                        }
+                        handleCloseTableMenu();
+                    }}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                >
+                    <StreamIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
+                    Watch for updates
+                </MenuItem>
+            )}
+            {/* Refresh data - hidden for database tables */}
+            {selectedTableForMenu?.source?.type !== 'database' && (
+                <MenuItem 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedTableForMenu) {
+                            handleOpenRefreshDialog(selectedTableForMenu);
+                        }
+                    }}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                >
+                    <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
+                    Refresh data
+                </MenuItem>
+            )}
             <MenuItem 
                 onClick={(e) => {
                     e.stopPropagation();
@@ -1231,8 +1471,19 @@ let SingleThreadGroupView: FC<{
                 onRefreshComplete={handleRefreshComplete}
             />
         )}
+
+        {/* Streaming settings popup */}
+        {selectedTableForStreamingSettings && (
+            <StreamingSettingsPopup
+                open={streamingSettingsPopupOpen}
+                anchorEl={streamingSettingsAnchorEl}
+                onClose={handleCloseStreamingSettingsPopup}
+                table={selectedTableForStreamingSettings}
+                onUpdateSettings={handleUpdateStreamingSettings}
+            />
+        )}
     </Box>
-}
+    }
 
 const VegaLiteChartElement = memo<{
     chart: Chart,
@@ -1597,7 +1848,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     let view = <Box maxWidth={drawerOpen ? 720 : collaposedViewWidth} sx={{ 
         overflow: 'auto', // Add horizontal scroll when drawer is open
         position: 'relative',
-        display: 'flex', 
+        display: drawerOpen ? '-webkit-box' : 'flex', 
         flexDirection: 'column',
         direction: 'ltr',
         height: 'calc(100% - 16px)',

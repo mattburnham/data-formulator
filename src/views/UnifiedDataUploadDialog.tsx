@@ -34,16 +34,21 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import Paper from '@mui/material/Paper';
 
+import StreamIcon from '@mui/icons-material/Stream';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions, fetchFieldSemanticType } from '../app/dfSlice';
 import { AppDispatch } from '../app/store';
-import { DictTable } from '../components/ComponentType';
+import { DataSourceConfig, DictTable } from '../components/ComponentType';
 import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
 import { DataLoadingChat } from './DataLoadingChat';
 import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
 import { getUrls } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
 import { DBManagerPane } from './DBTableManager';
+import { 
+    FormControlLabel, 
+    Switch
+} from '@mui/material';
 
 export type UploadTabType = 'menu' | 'upload' | 'paste' | 'url' | 'database' | 'extract' | 'explore';
 
@@ -386,15 +391,21 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [showFullContent, setShowFullContent] = useState<boolean>(false);
     const [isOverSizeLimit, setIsOverSizeLimit] = useState<boolean>(false);
     
-    // URL input state (merged into file upload)
-    const [tableURL, setTableURL] = useState<string>("");
-
-    // File preview state (shared with URL)
+    // File preview state
     const [filePreviewTables, setFilePreviewTables] = useState<DictTable[] | null>(null);
     const [filePreviewLoading, setFilePreviewLoading] = useState<boolean>(false);
     const [filePreviewError, setFilePreviewError] = useState<string | null>(null);
     const [filePreviewFiles, setFilePreviewFiles] = useState<File[]>([]);
     const [filePreviewActiveIndex, setFilePreviewActiveIndex] = useState<number>(0);
+
+    // URL tab state (separate from file upload)
+    const [tableURL, setTableURL] = useState<string>("");
+    const [urlAutoRefresh, setUrlAutoRefresh] = useState<boolean>(false);
+    const [urlRefreshInterval, setUrlRefreshInterval] = useState<number>(60); // default 60 seconds
+    const [urlPreviewTables, setUrlPreviewTables] = useState<DictTable[] | null>(null);
+    const [urlPreviewLoading, setUrlPreviewLoading] = useState<boolean>(false);
+    const [urlPreviewError, setUrlPreviewError] = useState<string | null>(null);
+    const [urlPreviewActiveIndex, setUrlPreviewActiveIndex] = useState<number>(0);
 
     // Sample datasets state
     const [datasetPreviews, setDatasetPreviews] = useState<DatasetMetadata[]>([]);
@@ -461,7 +472,14 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 };
                             }
                         })
-                        return { tables: tables, name: info["name"], description: info["description"], source: info["source"] }
+                        return { 
+                            tables: tables, 
+                            name: info["name"], 
+                            description: info["description"], 
+                            source: info["source"],
+                            live: info["live"],
+                            refreshIntervalSeconds: info["refreshIntervalSeconds"]
+                        }
                     }).filter((t: DatasetMetadata | undefined) => t != undefined);
                     setDatasetPreviews(datasets);
                 });
@@ -475,11 +493,18 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setIsLargeContent(false);
         setIsOverSizeLimit(false);
         setShowFullContent(false);
-        setTableURL("");
         setFilePreviewTables(null);
         setFilePreviewLoading(false);
         setFilePreviewError(null);
         setFilePreviewFiles([]);
+        // Reset URL tab state
+        setTableURL("");
+        setUrlAutoRefresh(false);
+        setUrlRefreshInterval(60);
+        setUrlPreviewTables(null);
+        setUrlPreviewLoading(false);
+        setUrlPreviewError(null);
+        setUrlPreviewActiveIndex(0);
         onClose();
     }, [onClose]);
 
@@ -493,8 +518,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             setFilePreviewError(null);
             setFilePreviewTables(null);
             setFilePreviewLoading(true);
-            // Clear URL input when file is uploaded
-            setTableURL("");
 
             const MAX_FILE_SIZE = 5 * 1024 * 1024;
             const previewTables: DictTable[] = [];
@@ -581,8 +604,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         }
         const table = filePreviewTables[filePreviewActiveIndex];
         if (table) {
-            dispatch(dfActions.loadTable(table));
-            dispatch(fetchFieldSemanticType(table));
+            const sourceConfig: DataSourceConfig = { type: 'file', fileName: filePreviewFiles[0]?.name };
+            const tableWithSource = { ...table, source: sourceConfig };
+            dispatch(dfActions.loadTable(tableWithSource));
+            dispatch(fetchFieldSemanticType(tableWithSource));
             handleClose();
         }
     };
@@ -591,9 +616,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         if (!filePreviewTables || filePreviewTables.length === 0) {
             return;
         }
-        for (let table of filePreviewTables) {
-            dispatch(dfActions.loadTable(table));
-            dispatch(fetchFieldSemanticType(table));
+        for (let i = 0; i < filePreviewTables.length; i++) {
+            const table = filePreviewTables[i];
+            const sourceConfig: DataSourceConfig = { type: 'file', fileName: filePreviewFiles[i]?.name || filePreviewFiles[0]?.name };
+            const tableWithSource = { ...table, source: sourceConfig };
+            dispatch(dfActions.loadTable(tableWithSource));
+            dispatch(fetchFieldSemanticType(tableWithSource));
         }
         handleClose();
     };
@@ -661,26 +689,37 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             table = createTableFromText(uniqueName, pasteContent);
         }
         if (table) {
-            dispatch(dfActions.loadTable(table));
-            dispatch(fetchFieldSemanticType(table));
+            // Add source info for paste data
+            const tableWithSource = { ...table, source: { type: 'paste' as const } };
+            dispatch(dfActions.loadTable(tableWithSource));
+            dispatch(fetchFieldSemanticType(tableWithSource));
             handleClose();
         }
     };
 
 
     const handleURLPreview = (): void => {
-        setFilePreviewLoading(true);
-        setFilePreviewError(null);
-        setFilePreviewTables(null);
-        // Clear file preview when URL is loaded
-        setFilePreviewFiles([]);
+        setUrlPreviewLoading(true);
+        setUrlPreviewError(null);
+        setUrlPreviewTables(null);
+
+        // Support relative URLs by constructing full URL
+        let fullUrl = tableURL;
+        if (tableURL.startsWith('/')) {
+            fullUrl = window.location.origin + tableURL;
+        }
 
         let parts = tableURL.split('/');
-        const baseName = parts[parts.length - 1] || 'dataset';
-        const tableName = getUniqueTableName(baseName, existingNames);
+        const baseName = parts[parts.length - 1]?.split('?')[0] || 'dataset';
+        const tableName = getUniqueTableName(baseName.replace(/\.[^.]+$/, ''), existingNames);
 
-        fetch(tableURL)
-            .then(res => res.text())
+        fetch(fullUrl)
+            .then(res => {
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                }
+                return res.text();
+            })
             .then(content => {
                 let table: undefined | DictTable = undefined;
                 try {
@@ -694,22 +733,86 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 }
 
                 if (table) {
-                    setFilePreviewTables([table]);
+                    setUrlPreviewTables([table]);
                 } else {
-                    setFilePreviewError('Unable to parse data from the provided URL.');
+                    setUrlPreviewError('Unable to parse data from the provided URL.');
                 }
             })
-            .catch(() => {
-                setFilePreviewError('Failed to fetch data from the URL.');
+            .catch((err) => {
+                setUrlPreviewError(`Failed to fetch data: ${err.message}`);
             })
             .finally(() => {
-                setFilePreviewLoading(false);
+                setUrlPreviewLoading(false);
             });
     };
 
-    const hasValidUrlSuffix = tableURL.endsWith('.csv') || tableURL.endsWith('.tsv') || tableURL.endsWith(".json");
+    // URL tab load handlers
+    const handleURLLoadSingleTable = (): void => {
+        if (!urlPreviewTables || urlPreviewTables.length === 0) {
+            return;
+        }
+        const table = urlPreviewTables[urlPreviewActiveIndex];
+        if (table) {
+            let sourceConfig: DataSourceConfig;
+            if (urlAutoRefresh) {
+                sourceConfig = { 
+                    type: 'stream', 
+                    url: tableURL,
+                    autoRefresh: true,
+                    refreshIntervalSeconds: urlRefreshInterval,
+                    lastRefreshed: Date.now()
+                };
+            } else {
+                sourceConfig = { type: 'url', url: tableURL };
+            }
+            const tableWithSource = { ...table, source: sourceConfig };
+            dispatch(dfActions.loadTable(tableWithSource));
+            dispatch(fetchFieldSemanticType(tableWithSource));
+            handleClose();
+        }
+    };
+
+    const handleURLLoadAllTables = (): void => {
+        if (!urlPreviewTables || urlPreviewTables.length === 0) {
+            return;
+        }
+        for (let i = 0; i < urlPreviewTables.length; i++) {
+            const table = urlPreviewTables[i];
+            let sourceConfig: DataSourceConfig;
+            if (urlAutoRefresh) {
+                sourceConfig = { 
+                    type: 'stream', 
+                    url: tableURL,
+                    autoRefresh: true,
+                    refreshIntervalSeconds: urlRefreshInterval,
+                    lastRefreshed: Date.now()
+                };
+            } else {
+                sourceConfig = { type: 'url', url: tableURL };
+            }
+            const tableWithSource = { ...table, source: sourceConfig };
+            dispatch(dfActions.loadTable(tableWithSource));
+            dispatch(fetchFieldSemanticType(tableWithSource));
+        }
+        handleClose();
+    };
+
+    const handleRemoveUrlPreviewTable = (index: number): void => {
+        setUrlPreviewTables((prev) => {
+            if (!prev) return prev;
+            const next = prev.filter((_, i) => i !== index);
+            return next.length > 0 ? next : null;
+        });
+    };
+
+    // URL validation - allow common data file extensions and API endpoints
+    const hasValidUrl = tableURL.trim() !== '' && (
+        tableURL.startsWith('http://') || tableURL.startsWith('https://') || tableURL.startsWith('/')
+    );
     const hasMultipleFileTables = (filePreviewTables?.length || 0) > 1;
+    const hasMultipleUrlTables = (urlPreviewTables?.length || 0) > 1;
     const showFilePreview = filePreviewLoading || !!filePreviewError || (filePreviewTables && filePreviewTables.length > 0);
+    const showUrlPreview = urlPreviewLoading || !!urlPreviewError || (urlPreviewTables && urlPreviewTables.length > 0);
     const hasPasteContent = pasteContent.trim() !== '';
 
     // Data source configurations for the menu
@@ -725,8 +828,16 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         { 
             value: 'upload' as UploadTabType, 
             title: 'Upload File', 
-            description: 'Structured data (CSV, TSV, JSON, Excel) from files or URLs',
+            description: 'Upload local files (CSV, TSV, JSON, Excel)',
             icon: <UploadFileIcon />, 
+            disabled: false,
+            disabledReason: undefined
+        },
+        { 
+            value: 'url' as UploadTabType, 
+            title: 'Load from URL', 
+            description: 'Load data from a URL with optional auto-refresh',
+            icon: <LinkIcon />, 
             disabled: false,
             disabledReason: undefined
         },
@@ -747,6 +858,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             disabledReason: undefined
         },
     ];
+
 
     const databaseDataSources = [
         { 
@@ -930,95 +1042,46 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             inputRef={fileInputRef}
                             onChange={handleFileUpload}
                         />
-                        {serverConfig.DISABLE_FILE_UPLOAD ? (
-                            <Box sx={{ textAlign: 'center', py: 4 }}>
+                        
+                        {/* File Upload Section - only show drop zone when file upload is enabled */}
+                        {!serverConfig.DISABLE_FILE_UPLOAD ? (
+                            <Box
+                                sx={{
+                                    border: '2px dashed',
+                                    borderColor: 'divider',
+                                    borderRadius: 2,
+                                    p: showFilePreview ? 2 : 3,
+                                    textAlign: 'center',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s',
+                                    '&:hover': {
+                                        borderColor: 'primary.main',
+                                        backgroundColor: alpha(theme.palette.primary.main, 0.04),
+                                    }
+                                }}
+                                onClick={() => fileInputRef.current?.click()}
+                            >
+                                <UploadFileIcon sx={{ fontSize: showFilePreview ? 28 : 36, color: 'text.secondary', mb: 1 }} />
+                                <Typography variant={showFilePreview ? "body2" : "subtitle1"} gutterBottom>
+                                    Drag & drop file here
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: showFilePreview ? '0.75rem' : '0.875rem' }}>
+                                    or <Link component="button" sx={{ textDecoration: 'underline', cursor: 'pointer' }}>Browse</Link>
+                                </Typography>
+                                {!showFilePreview && (
+                                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                        Supported: CSV, TSV, JSON, Excel (xlsx, xls)
+                                    </Typography>
+                                )}
+                            </Box>
+                        ) : (
+                            <Box sx={{ textAlign: 'center', py: 4, px: 2 }}>
                                 <Typography color="text.secondary" sx={{ mb: 2 }}>
                                     File upload is disabled in this environment.
                                 </Typography>
                                 <Typography variant="body2" color="text.secondary">
-                                    Install Data Formulator locally to enable file upload. <br />
-                                    <Link 
-                                        href="https://github.com/microsoft/data-formulator" 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                    >
-                                        https://github.com/microsoft/data-formulator
-                                    </Link>
+                                    Use "Load from URL" to load data from a remote source.
                                 </Typography>
-                            </Box>
-                        ) : (
-                            <Box sx={{ 
-                                display: 'flex', 
-                                flexDirection: 'column',
-                                gap: 2,
-                                alignItems: 'stretch',
-                            }}>
-                                <Box
-                                    sx={{
-                                        border: '2px dashed',
-                                        borderColor: 'divider',
-                                        borderRadius: 2,
-                                        p: showFilePreview ? 2 : 3,
-                                        textAlign: 'center',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                        flex: '1',
-                                        minWidth: showFilePreview ? 0 : 'auto',
-                                        '&:hover': {
-                                            borderColor: 'primary.main',
-                                            backgroundColor: alpha(theme.palette.primary.main, 0.04),
-                                        }
-                                    }}
-                                    onClick={() => fileInputRef.current?.click()}
-                                >
-                                    <UploadFileIcon sx={{ fontSize: showFilePreview ? 28 : 36, color: 'text.secondary', mb: 1 }} />
-                                    <Typography variant={showFilePreview ? "body2" : "subtitle1"} gutterBottom>
-                                        Drag & drop file here
-                                    </Typography>
-                                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: showFilePreview ? '0.75rem' : '0.875rem' }}>
-                                        or <Link component="button" sx={{ textDecoration: 'underline', cursor: 'pointer' }}>Browse</Link>
-                                    </Typography>
-                                    {!showFilePreview && (
-                                        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                            Supported: CSV, TSV, JSON, Excel (xlsx, xls)
-                                        </Typography>
-                                    )}
-                                </Box>
-
-                                {/* URL Input Section */}
-                                <Box sx={{ 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    gap: 1,
-                                    flex: '0 0 auto',
-                                }}>
-                                    <TextField
-                                        fullWidth
-                                        placeholder="Load a CSV, TSV, or JSON file from a URL, e.g. https://example.com/data.json"
-                                        value={tableURL}
-                                        onChange={(e) => setTableURL(e.target.value.trim())}
-                                        error={tableURL !== "" && !hasValidUrlSuffix}
-                                        size="small"
-                                        sx={{ 
-                                            flex: 1,
-                                            '& .MuiInputBase-input': {
-                                                fontSize: '0.75rem',
-                                            },
-                                            '& .MuiInputBase-input::placeholder': {
-                                                fontSize: '0.75rem',
-                                            },
-                                        }}
-                                    />
-                                    <Button
-                                        variant="outlined"
-                                        size="small"
-                                        onClick={handleURLPreview}
-                                        disabled={!hasValidUrlSuffix || filePreviewLoading}
-                                        sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
-                                    >
-                                        Preview
-                                    </Button>
-                                </Box>
                             </Box>
                         )}
                         </Box>
@@ -1030,7 +1093,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     loading={filePreviewLoading}
                                     error={filePreviewError}
                                     tables={filePreviewTables}
-                                    emptyLabel={serverConfig.DISABLE_FILE_UPLOAD ? 'File upload is disabled.' : 'Select a file to preview.'}
+                                    emptyLabel="Select a file to preview."
                                     meta={filePreviewTables && filePreviewTables.length > 0 ? `${filePreviewTables.length} table${filePreviewTables.length > 1 ? 's' : ''} previewed${hasMultipleFileTables ? ' • Multiple sheets detected' : ''}` : undefined}
                                     onRemoveTable={handleRemoveFilePreviewTable}
                                     activeIndex={filePreviewActiveIndex}
@@ -1040,12 +1103,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         )}
 
                         {filePreviewTables && filePreviewTables.length > 0 && (
-                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, alignItems: 'center' }}>
                                 <Button
                                     variant="outlined"
                                     size="small"
                                     onClick={handleFileLoadSingleTable}
-                                    disabled={serverConfig.DISABLE_FILE_UPLOAD || filePreviewLoading}
+                                    disabled={filePreviewLoading}
                                     sx={{ textTransform: 'none' }}
                                 >
                                     Load Table
@@ -1055,7 +1118,189 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         variant="contained"
                                         size="small"
                                         onClick={handleFileLoadAllTables}
-                                        disabled={serverConfig.DISABLE_FILE_UPLOAD || filePreviewLoading}
+                                        disabled={filePreviewLoading}
+                                        sx={{ textTransform: 'none' }}
+                                    >
+                                        Load All Tables
+                                    </Button>
+                                )}
+                            </Box>
+                        )}
+                    </Box>
+                </TabPanel>
+
+                {/* URL Tab */}
+                <TabPanel value={activeTab} index="url">
+                    <Box sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        height: '100%',
+                        boxSizing: 'border-box',
+                        gap: 2,
+                        p: 2,
+                        justifyContent: showUrlPreview ? 'flex-start' : 'center',
+                    }}>
+                        <Box sx={{ width: '100%', maxWidth: showUrlPreview ? '80%' : 760, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            {/* URL Input */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <TextField
+                                    fullWidth
+                                    placeholder="Enter URL: https://example.com/data.json or /api/data"
+                                    value={tableURL}
+                                    onChange={(e) => setTableURL(e.target.value.trim())}
+                                    error={tableURL !== "" && !hasValidUrl}
+                                    helperText={tableURL !== "" && !hasValidUrl ? "Enter a valid URL starting with http://, https://, or /" : undefined}
+                                    size="small"
+                                    sx={{ 
+                                        flex: 1,
+                                        '& .MuiInputBase-input': {
+                                            fontSize: '0.875rem',
+                                        },
+                                        '& .MuiInputBase-input::placeholder': {
+                                            fontSize: '0.875rem',
+                                        },
+                                    }}
+                                />
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={handleURLPreview}
+                                    disabled={!hasValidUrl || urlPreviewLoading}
+                                    sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+                                >
+                                    Preview
+                                </Button>
+                            </Box>
+
+                            {/* Example APIs */}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                                    Try examples:
+                                </Typography>
+                                {[
+                                    { label: 'USGS Earthquakes', url: '/api/demo-stream/earthquakes?timeframe=day&min_magnitude=2.5', description: 'Recent earthquakes worldwide' },
+                                    { label: 'US Weather', url: '/api/demo-stream/weather', description: 'Current weather for major US cities' },
+                                    { label: 'Stock Prices (yahoo finance)', url: '/api/demo-stream/yfinance?symbols=AAPL,MSFT,GOOGL,NVDA', description: 'Stock prices with historical + intraday data' },
+                                ].map((example) => (
+                                    <Chip
+                                        key={example.label}
+                                        label={example.label}
+                                        size="small"
+                                        variant="outlined"
+                                        onClick={() => setTableURL(example.url)}
+                                        title={example.description}
+                                        sx={{ 
+                                            cursor: 'pointer',
+                                            fontSize: '0.75rem',
+                                            height: 24,
+                                            '&:hover': {
+                                                backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                                                borderColor: 'primary.main',
+                                            }
+                                        }}
+                                    />
+                                ))}
+                            </Box>
+                            
+                            {/* Watch/Auto-refresh options - always visible */}
+                            <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                                    <FormControlLabel
+                                        control={
+                                            <Switch
+                                                checked={urlAutoRefresh}
+                                                onChange={(e) => setUrlAutoRefresh(e.target.checked)}
+                                                size="small"
+                                            />
+                                        }
+                                        label={
+                                            <Box sx={{ height: 24, display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'center' }}>
+                                                <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
+                                                    Watch Mode:
+                                                </Typography>
+                                                
+                                                {urlAutoRefresh ? (
+                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, }}>
+                                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                                                            refresh interval
+                                                        </Typography>
+                                                        {[
+                                                            { seconds: 5, label: '5s' },
+                                                            { seconds: 15, label: '15s' },
+                                                            { seconds: 30, label: '30s' },
+                                                            { seconds: 60, label: '1m' },
+                                                            { seconds: 300, label: '5m' },
+                                                            { seconds: 600, label: '10m' },
+                                                            { seconds: 1800, label: '30m' },
+                                                            { seconds: 3600, label: '1h' },
+                                                        ].map((opt) => (
+                                                            <Chip
+                                                                key={opt.seconds}
+                                                                label={opt.label}
+                                                                size="small"
+                                                                variant={urlRefreshInterval === opt.seconds ? 'filled' : 'outlined'}
+                                                                color={urlRefreshInterval === opt.seconds ? 'primary' : 'default'}
+                                                                onClick={() => setUrlRefreshInterval(opt.seconds)}
+                                                                sx={{ 
+                                                                    cursor: 'pointer', 
+                                                                    fontSize: '0.7rem',
+                                                                    height: 24,
+                                                                }}
+                                                            />
+                                                        ))}
+                                                    </Box>
+                                                ) : <Typography sx={{ ml: 'auto' }} component="span" variant="caption" color="text.secondary">
+                                                    automatically check and refresh data from the URL at regular intervals
+                                                </Typography>}
+                                            </Box>
+                                        }
+                                        sx={{ alignItems: 'flex-start', ml: 0 }}
+                                    />
+                                    
+                                    
+                                </Box>
+                            </Paper>
+                        </Box>
+
+                        {showUrlPreview && (
+                            <Box sx={{ width: '90%', alignSelf: 'center' }}>
+                                <PreviewPanel
+                                    title="Preview"
+                                    loading={urlPreviewLoading}
+                                    error={urlPreviewError}
+                                    tables={urlPreviewTables}
+                                    emptyLabel="Enter a URL and click Preview to see data."
+                                    meta={urlPreviewTables && urlPreviewTables.length > 0 ? `${urlPreviewTables.length} table${urlPreviewTables.length > 1 ? 's' : ''} previewed` : undefined}
+                                    onRemoveTable={handleRemoveUrlPreviewTable}
+                                    activeIndex={urlPreviewActiveIndex}
+                                    onActiveIndexChange={setUrlPreviewActiveIndex}
+                                />
+                            </Box>
+                        )}
+
+                        {urlPreviewTables && urlPreviewTables.length > 0 && (
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, alignItems: 'center' }}>
+                                {urlAutoRefresh && (
+                                    <Typography variant="caption" color="success.main" sx={{ mr: 1 }}>
+                                        <StreamIcon sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.5 }} />
+                                        Watch mode: {urlRefreshInterval < 60 ? `${urlRefreshInterval}s` : `${Math.floor(urlRefreshInterval / 60)}m`}
+                                    </Typography>
+                                )}
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={handleURLLoadSingleTable}
+                                    disabled={urlPreviewLoading}
+                                    sx={{ textTransform: 'none' }}
+                                >
+                                    Load Table
+                                </Button>
+                                {hasMultipleUrlTables && (
+                                    <Button
+                                        variant="contained"
+                                        size="small"
+                                        onClick={handleURLLoadAllTables}
+                                        disabled={urlPreviewLoading}
                                         sx={{ textTransform: 'none' }}
                                     >
                                         Load All Tables
@@ -1191,11 +1436,20 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         datasets={datasetPreviews} 
                         hideRowNum
                         handleSelectDataset={(dataset) => {
-                            for (let table of dataset.tables) { 
-                                fetch(table.url)
+                            // Check if this is a live dataset
+                            const isLiveDataset = dataset.live === true;
+                            
+                            for (let table of dataset.tables) {
+                                // For live datasets with relative URLs, construct full URL
+                                let fullUrl = table.url;
+                                if (table.url.startsWith('/')) {
+                                    fullUrl = window.location.origin + table.url;
+                                }
+                                
+                                fetch(fullUrl)
                                     .then(res => res.text())
                                     .then(textData => {
-                                        let tableName = table.url.split("/").pop()?.split(".")[0] || 'table-' + Date.now().toString().substring(0, 8);
+                                        let tableName = table.url.split("/").pop()?.split(".")[0]?.split("?")[0] || 'table-' + Date.now().toString().substring(0, 8);
                                         let dictTable;
                                         if (table.format == "csv") {
                                             dictTable = createTableFromText(tableName, textData);
@@ -1203,6 +1457,19 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                             dictTable = createTableFromFromObjectArray(tableName, JSON.parse(textData), true);
                                         } 
                                         if (dictTable) {
+                                            // For live datasets, set up as stream source with auto-refresh
+                                            if (isLiveDataset) {
+                                                dictTable.source = { 
+                                                    type: 'stream', 
+                                                    url: fullUrl,
+                                                    autoRefresh: true,
+                                                    refreshIntervalSeconds: dataset.refreshIntervalSeconds || 60,
+                                                    lastRefreshed: Date.now()
+                                                };
+                                            } else {
+                                                // Regular example data
+                                                dictTable.source = { type: 'example', url: table.url };
+                                            }
                                             dispatch(dfActions.loadTable(dictTable));
                                             dispatch(fetchFieldSemanticType(dictTable));
                                         }
@@ -1213,6 +1480,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         />
                     </Box>
                 </TabPanel>
+
             </DialogContent>
         </Dialog>
     );

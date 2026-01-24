@@ -2,13 +2,13 @@
 // Licensed under the MIT License.
 
 import { createAsyncThunk, createSlice, PayloadAction, createSelector } from '@reduxjs/toolkit'
-import { Channel, Chart, ChartTemplate, DataCleanBlock, EncodingItem, EncodingMap, FieldItem, Trigger } from '../components/ComponentType'
+import { Channel, Chart, ChartTemplate, DataCleanBlock, DataSourceConfig, EncodingItem, EncodingMap, FieldItem, Trigger } from '../components/ComponentType'
 import { enableMapSet } from 'immer';
 import { DictTable } from "../components/ComponentType";
 import { Message } from '../views/MessageSnackbar';
 import { getChartTemplate, getChartChannels } from "../components/ChartTemplates"
 import { getDataTable } from '../views/VisualizationView';
-import { adaptChart, getTriggers, getUrls } from './utils';
+import { adaptChart, getTriggers, getUrls, computeContentHash } from './utils';
 import { Type } from '../data/types';
 import { createTableFromFromObjectArray, inferTypeFromValueArray } from '../data/utils';
 
@@ -442,6 +442,10 @@ export const dataFormulatorSlice = createSlice({
         },
         loadTable: (state, action: PayloadAction<DictTable>) => {
             let table = action.payload;
+            // Compute content hash if not already set
+            if (!table.contentHash) {
+                table = { ...table, contentHash: computeContentHash(table.rows, table.names) };
+            }
             state.tables = [...state.tables, table];
             state.charts = [...state.charts];
             state.conceptShelfItems = [...state.conceptShelfItems, ...getDataFieldItems(table)];
@@ -475,11 +479,12 @@ export const dataFormulatorSlice = createSlice({
             let attachedMetadata = action.payload.attachedMetadata;
             state.tables = state.tables.map(t => t.id == tableId ? {...t, attachedMetadata} : t);
         },
-        updateTableRows: (state, action: PayloadAction<{tableId: string, rows: any[]}>) => {
+        updateTableRows: (state, action: PayloadAction<{tableId: string, rows: any[], contentHash?: string}>) => {
             // Update the rows of a table while preserving all other table properties
             // This is used for refreshing data in original (non-derived) tables
             let tableId = action.payload.tableId;
             let newRows = action.payload.rows;
+            let providedContentHash = action.payload.contentHash;
             
             state.tables = state.tables.map(t => {
                 if (t.id == tableId) {
@@ -493,7 +498,37 @@ export const dataFormulatorSlice = createSlice({
                             };
                         }
                     }
-                    return { ...t, rows: newRows, metadata: newMetadata };
+                    // Update lastRefreshed timestamp if source exists
+                    const updatedSource = t.source ? { ...t.source, lastRefreshed: Date.now() } : undefined;
+                    // Use provided content hash (from backend for virtual/DB tables) or compute locally
+                    // For virtual tables, backend hash reflects full table; for stream tables, compute from actual rows
+                    const newContentHash = providedContentHash || computeContentHash(newRows, t.names);
+                    return { ...t, rows: newRows, metadata: newMetadata, source: updatedSource, contentHash: newContentHash };
+                }
+                return t;
+            });
+        },
+        updateTableSource: (state, action: PayloadAction<{tableId: string, source: DataSourceConfig}>) => {
+            // Update the source configuration of a table
+            let tableId = action.payload.tableId;
+            let source = action.payload.source;
+            state.tables = state.tables.map(t => t.id == tableId ? {...t, source} : t);
+        },
+        updateTableSourceRefreshSettings: (state, action: PayloadAction<{tableId: string, autoRefresh: boolean, refreshIntervalSeconds?: number}>) => {
+            // Update just the refresh settings of a table's source
+            let tableId = action.payload.tableId;
+            let autoRefresh = action.payload.autoRefresh;
+            let refreshIntervalSeconds = action.payload.refreshIntervalSeconds;
+            state.tables = state.tables.map(t => {
+                if (t.id == tableId && t.source) {
+                    return {
+                        ...t,
+                        source: {
+                            ...t.source,
+                            autoRefresh,
+                            ...(refreshIntervalSeconds !== undefined ? { refreshIntervalSeconds } : {})
+                        }
+                    };
                 }
                 return t;
             });

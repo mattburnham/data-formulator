@@ -51,6 +51,7 @@ import { getUrls } from '../app/utils';
 import { UnifiedDataUploadDialog, UploadTabType } from './UnifiedDataUploadDialog';
 import { ReportView } from './ReportView';
 import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
+import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 
 export const DataFormulatorFC = ({ }) => {
 
@@ -61,6 +62,12 @@ export const DataFormulatorFC = ({ }) => {
     const theme = useTheme();
 
     const dispatch = useDispatch();
+
+    // Set up auto-refresh for streaming and database tables
+    const { manualRefresh, getRefreshInfo } = useDataRefresh();
+    
+    // Set up automatic refresh of derived tables when source data changes
+    useDerivedTableRefresh();
 
     // State for unified data upload dialog
     const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -230,7 +237,7 @@ export const DataFormulatorFC = ({ }) => {
                 {viewMode === 'editor' ? (
                     <>
                         {visPane}
-                        <ConceptShelf />
+                        {/* <ConceptShelf /> */}
                     </>
                 ) : (
                     <ReportView />

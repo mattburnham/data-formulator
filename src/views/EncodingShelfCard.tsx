@@ -63,7 +63,6 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
 import LightbulbOutlinedIcon from '@mui/icons-material/LightbulbOutlined';
 import TipsAndUpdatesIcon from '@mui/icons-material/TipsAndUpdates';
-import BugReportIcon from '@mui/icons-material/BugReport';
 import { IdeaChip } from './ChartRecBox';
 
 // Property and state of an encoding shelf
@@ -928,7 +927,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 </span>
             </Tooltip>
         }
-        
     </Box>
 
     // Ideas display section - get ideas for current chart
@@ -1026,18 +1024,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
             >
                 Editor
             </Typography>
-            <Box sx={{ flex: 1 }} />
-            <IconButton
-                size="small"
-                onClick={() => setDevMessageOpen(true)}
-                sx={{ 
-                    width: 20,
-                    height: 20,
-                    fontSize: '10px'
-                }}
-            >
-                <BugReportIcon fontSize="inherit" />
-            </IconButton>
         </Box>
     );
 
@@ -1140,14 +1126,13 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         </Box>);
 
     const encodingShelfCard = (
-        <>
-            <Card variant='outlined' sx={{ 
-                padding: 0, 
-                maxWidth: "400px", 
-                display: 'flex', 
-                flexDirection: 'column', 
-                backgroundColor: trigger ? "rgba(255, 160, 122, 0.07)" : "" 
-            }}>
+        <Card variant='outlined' sx={{ 
+            padding: 0, 
+            maxWidth: "400px", 
+            display: 'flex', 
+            flexDirection: 'column', 
+            backgroundColor: trigger ? "rgba(255, 160, 122, 0.07)" : "" 
+        }}>
             <ModeToggleHeader />
             {ideateMode ? (
                 <Box sx={{ padding: 1 }}>
@@ -1177,65 +1162,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                 </Box>
             )}
         </Card>
-        <Dialog
-            open={devMessageOpen}
-            onClose={() => setDevMessageOpen(false)}
-            maxWidth="sm"
-            fullWidth
-            PaperProps={{
-                sx: {
-                    borderRadius: 2,
-                    boxShadow: theme.shadows[10],
-                }
-            }}
-        >
-            <DialogTitle sx={{ 
-                pb: 1,
-                fontWeight: 600,
-                fontSize: '1.25rem',
-                color: theme.palette.primary.main
-            }}>
-                👋 Hello from the developers!
-            </DialogTitle>
-            <DialogContent>
-                <Typography variant="body1" sx={{ mb: 2 }}>
-                    How did you find this? We're glad you're exploring!
-                    <br />
-                    Drop us a message at{' '}
-                    <Typography
-                        component="a"
-                        href="https://github.com/microsoft/data-formulator"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        sx={{
-                            fontSize: 'inherit',
-                            color: theme.palette.primary.main,
-                            textDecoration: 'none',
-                            fontWeight: 500,
-                            '&:hover': {
-                                textDecoration: 'underline',
-                            }
-                        }}
-                    >
-                        github.com/microsoft/data-formulator
-                    </Typography>
-                    {' '}if you have any questions or feedback.
-                </Typography>
-            </DialogContent>
-            <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button 
-                    onClick={() => setDevMessageOpen(false)}
-                    variant="contained"
-                    sx={{
-                        textTransform: 'none',
-                        borderRadius: 1.5,
-                    }}
-                >
-                    Got it!
-                </Button>
-            </DialogActions>
-        </Dialog>
-        </>
     );
 
     return encodingShelfCard;

@@ -413,6 +413,94 @@ SPX,65,SPX,US,O/LA/LV/PL/S,B,2007 Aug,-,SpaceX,SpaceX,"Hawthorne, California",-,
 1974-063,2442268.64,1974-08-09,1974,Thor Burner 2A,,DMSP Block 5C F-1,US,US,O,state'''
             }
         ]
+    },
+    # ==========================================================================
+    # LIVE DATA EXAMPLES - Auto-refresh streaming datasets
+    # ==========================================================================
+    {
+        'source': 'demo',
+        'name': 'Live Sales Feed (Live)',
+        'description': 'Simulated e-commerce transactions with product details, regions, and channels. Updates every 1 second.',
+        'live': True,
+        'refreshIntervalSeconds': 1,
+        'tables': [
+            {
+                "format": 'csv',
+                "url": '/api/demo-stream/live-sales',
+                "sample": '''transaction_id,timestamp,product,category,quantity,unit_price,discount_pct,total,region,channel
+TX123456,2024-01-15T10:30:00Z,Wireless Headphones,Electronics,2,71.99,10,143.98,North America,Web
+TX123457,2024-01-15T10:29:45Z,Running Shoes,Sports,1,129.99,0,129.99,Europe,Mobile App
+TX123458,2024-01-15T10:29:30Z,Coffee Maker,Home,1,80.99,10,80.99,Asia Pacific,Web'''
+            }
+        ]
+    },
+    {
+        'source': 'open-notify.org',
+        'name': 'ISS Location (Live)',
+        'description': 'Real-time International Space Station position trajectory. Updates every 5 seconds.',
+        'live': True,
+        'refreshIntervalSeconds': 5,
+        'tables': [
+            {
+                "format": 'csv',
+                "url": '/api/demo-stream/iss',
+                "sample": '''timestamp,latitude,longitude,fetched_at
+2024-01-15T10:30:00Z,45.234,-122.456,2024-01-15T10:30:00Z
+2024-01-15T10:29:55Z,45.123,-122.345,2024-01-15T10:29:55Z
+2024-01-15T10:29:50Z,45.012,-122.234,2024-01-15T10:29:50Z'''
+            }
+        ]
+    },
+    {
+        'source': 'USGS',
+        'name': 'Earthquakes (Live)',
+        'description': 'Real-time earthquake data from USGS. New quakes appear over time. Updates every 60 seconds.',
+        'live': True,
+        'refreshIntervalSeconds': 60,
+        'tables': [
+            {
+                "format": 'csv',
+                "url": '/api/demo-stream/earthquakes?timeframe=hour',
+                "sample": '''id,time,latitude,longitude,depth_km,magnitude,place,type,status,felt,cdi,mmi,tsunami,sig,net,code,url,fetched_at
+us7000abc1,2024-01-15T10:25:00Z,36.234,-117.456,5.2,2.5,"10km N of Ridgecrest, CA",earthquake,reviewed,,,0,0,125,us,abc1,https://earthquake.usgs.gov/earthquakes/eventpage/us7000abc1,2024-01-15T10:30:00Z
+us7000abc2,2024-01-15T10:15:00Z,61.123,-150.345,45.8,3.1,"50km S of Anchorage, AK",earthquake,automatic,5,,0,0,180,us,abc2,https://earthquake.usgs.gov/earthquakes/eventpage/us7000abc2,2024-01-15T10:30:00Z'''
+            }
+        ]
+    },
+    {
+        'source': 'Open-Meteo',
+        'name': 'Weather (Live)',
+        'description': 'Current weather conditions for major US cities. Updates every 5 minutes.',
+        'live': True,
+        'refreshIntervalSeconds': 300,
+        'tables': [
+            {
+                "format": 'csv',
+                "url": '/api/demo-stream/weather',
+                "sample": '''city,latitude,longitude,temperature_c,humidity_percent,wind_speed_kmh,precipitation_mm,fetched_at
+Seattle,47.6062,-122.3321,8.5,72,12.5,0.2,2024-01-15T10:30:00Z
+New York,40.7128,-74.006,2.3,65,18.2,0.0,2024-01-15T10:30:00Z
+Los Angeles,34.0522,-118.2437,15.8,55,8.3,0.0,2024-01-15T10:30:00Z'''
+            }
+        ]
+    },
+    {
+        'source': 'yfinance',
+        'name': 'Stock Prices (Live)',
+        'description': 'Stock prices with 6 months of daily history + recent 15-minute intraday data. Updates every 5 minutes during market hours.',
+        'live': True,
+        'refreshIntervalSeconds': 300,
+        'tables': [
+            {
+                "format": 'csv',
+                "url": '/api/demo-stream/yfinance?symbols=AAPL,MSFT,GOOGL,NVDA',
+                "sample": '''symbol,timestamp,date,open,high,low,close,volume,data_type,fetched_at
+AAPL,2024-01-15 14:30:00,2024-01-15,185.50,186.20,185.30,185.95,1234567,intraday,2024-01-15T19:35:00Z
+MSFT,2024-01-15 14:30:00,2024-01-15,388.75,389.50,388.25,389.10,987654,intraday,2024-01-15T19:35:00Z
+GOOGL,2024-01-15 14:30:00,2024-01-15,141.20,141.80,141.00,141.55,654321,intraday,2024-01-15T19:35:00Z
+NVDA,2024-01-15 14:30:00,2024-01-15,545.20,548.80,544.50,547.35,2345678,intraday,2024-01-15T19:35:00Z'''
+            }
+        ]
     }
 ]
 

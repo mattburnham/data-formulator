@@ -205,7 +205,6 @@ const barCharts: ChartTemplate[] = [
         "icon": <ChartIcon src={chartIconPyramid} />,
         "template": {
             "spacing": 0,
-            
             "resolve": {"scale": {"y": "shared"}},
             "hconcat": [{
                 "mark": "bar",
@@ -268,9 +267,66 @@ const barCharts: ChartTemplate[] = [
         "paths": {
             "x": ["encoding", "x"],
             "y": ["encoding", "y"],
-            "color": [["encoding", "xOffset"], ["encoding", "color"]],
+            "color": [["encoding", "color"]],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
+        },
+        "postProcessor": (vgSpec: any, table: any[]) => {
+            if (!vgSpec.encoding.color?.field) return vgSpec;
+            
+            let nominalChannel: "x" | "y" | null = null;
+            let offsetChannel: "xOffset" | "yOffset" | null = null;
+            
+            if (vgSpec.encoding.x?.type === "nominal") {
+                nominalChannel = "x";
+                offsetChannel = "xOffset";
+            } else if (vgSpec.encoding.y?.type === "nominal") {
+                nominalChannel = "y";
+                offsetChannel = "yOffset";
+            } else if (vgSpec.encoding.x && vgSpec.encoding.y) {
+                // Neither are nominal, convert the one with lower cardinality to nominal
+                if (table && table.length > 0) {
+                    const xField = vgSpec.encoding.x?.field;
+                    const yField = vgSpec.encoding.y?.field;
+                    
+                    let xCardinality = Infinity;
+                    let yCardinality = Infinity;
+                    
+                    if (xField) {
+                        const xValues = [...new Set(table.map(r => r[xField]))];
+                        xCardinality = xValues.length;
+                    }
+                    
+                    if (yField) {
+                        const yValues = [...new Set(table.map(r => r[yField]))];
+                        yCardinality = yValues.length;
+                    }
+                    
+                    if (xCardinality <= yCardinality) {
+                        nominalChannel = "x";
+                        offsetChannel = "xOffset";
+                        vgSpec.encoding.x.type = "nominal";
+                    } else {
+                        nominalChannel = "y";
+                        offsetChannel = "yOffset";
+                        vgSpec.encoding.y.type = "nominal";
+                    }
+                } else {
+                    // Default: convert x to nominal and use xOffset if no table data
+                    nominalChannel = "x";
+                    offsetChannel = "xOffset";
+                    vgSpec.encoding.x.type = "nominal";
+                }
+            }
+            
+            if (nominalChannel && offsetChannel) {
+                if (!vgSpec.encoding[offsetChannel]) {
+                    vgSpec.encoding[offsetChannel] = {};
+                }
+                vgSpec.encoding[offsetChannel].field = vgSpec.encoding.color.field;
+                vgSpec.encoding[offsetChannel].type = "nominal";
+            }
+            return vgSpec;
         }
     },
     {
