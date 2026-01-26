@@ -32,25 +32,16 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 
 
 ## News 🔥🔥🔥
-[12-08-2025] **Data Formulator 0.5.1** — Connect more, visualize more, move faster
-- 🔌 **Community data loaders**: Google BigQuery, MySQL, Postgres, MongoDB
-- 📊 **New chart types**: US Map & Pie Chart (more to be added soon)
-- ✏️ **Editable reports**: Refine generated reports with [Chartifact](https://github.com/microsoft/chartifact) in markdown style. [demo](https://github.com/microsoft/data-formulator/pull/200#issue-3635408217)
-- ⚡ **Snappier UI**: Noticeably faster interactions across the board
-
-[11-07-2025] Data Formulator 0.5: Vibe with your data, in control
-
-- 📊 **Load (almost) any data**: load structured data, extract data from screenshots, from messy text blocks, or connect to databases.
-- 🤖 **Explore data with AI agents**: 
-  - In agent mode, provide a high-level goal and ask agents to explore data for you.
-  - To stay in control, directly interact with agents: ask for recommendations or specify chart designs with UI + NL inputs, and AI agents will formulate data to realize your design.
-  - Use data threads to control branching exploration paths: backtrack, branch, or follow up.
-- ✅ **Verify AI generated results**: interact with charts and inspect data, formulas, explanations, and code.
-- 📝 **Create reports to share insights**: choose charts you want to share, and ask agents to create reports grounded in data formulated throughout exploration.
+[01-25-2025] **Data Formulator 0.6** — Connect to your live data
+-  📡 **Live Data** Explore live data source with real-time insights
+  - Set refresh interval when connecting to data from URLs and databases
+  - When data updates, visualizations are refreshed automatically with new insights
 
 ## Previous Updates
 
 Here are milestones that lead to the current design:
+- **v0.5.1** ([Demo](https://github.com/microsoft/data-formulator/pull/200#issue-3635408217)): Community data loaders (Google BigQuery, MySQL, Postgres, MongoDB), new chart types (US Map & Pie Chart), editable reports with Chartifact
+- **v0.5**: Agent mode for data analysis; create reports to share insights.
 - **v0.2.2** ([Demo](https://github.com/microsoft/data-formulator/pull/176)): Goal-driven exploration with agent recommendations and performance improvements
 - **v0.2.1.3/4** ([Readme](https://github.com/microsoft/data-formulator/tree/main/py-src/data_formulator/data_loader) | [Demo](https://github.com/microsoft/data-formulator/pull/155)): External data loaders (MySQL, PostgreSQL, MSSQL, Azure Data Explorer, S3, Azure Blob)
 - **v0.2** ([Demos](https://github.com/microsoft/data-formulator/releases/tag/0.2)): Large data support with DuckDB integration
