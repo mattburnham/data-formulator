@@ -30,7 +30,6 @@ import {
   styled,
   useTheme,
   Link,
-  Checkbox,
   Popover,
   Switch,
   Slider,
@@ -45,6 +44,13 @@ import TableRowsIcon from '@mui/icons-material/TableRows';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
 import StreamIcon from '@mui/icons-material/Stream';
+import Autocomplete from '@mui/material/Autocomplete';
+
+// Type for table import configuration
+type TableImportConfig = 
+    | { mode: 'none' }
+    | { mode: 'full' }
+    | { mode: 'subset'; rowLimit: number; sortColumns: string[]; sortOrder: 'asc' | 'desc' };
 
 import { getUrls, fetchWithSession } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
@@ -1151,7 +1157,23 @@ export const DataLoaderForm: React.FC<{
     const [tableMetadata, setTableMetadata] = useState<Record<string, any>>({});
     let [displaySamples, setDisplaySamples] = useState<Record<string, boolean>>({});
     let [tableFilter, setTableFilter] = useState<string>("");
-    const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
+    const [tableImportConfigs, setTableImportConfigs] = useState<Record<string, TableImportConfig>>({});
+    const [subsetConfigAnchor, setSubsetConfigAnchor] = useState<{element: HTMLElement, tableName: string} | null>(null);
+    
+    // Helper to get import config for a table (defaults to 'none')
+    const getTableConfig = (tableName: string): TableImportConfig => {
+        return tableImportConfigs[tableName] ?? { mode: 'none' };
+    };
+    
+    // Helper to update config for a specific table
+    const updateTableConfig = (tableName: string, config: TableImportConfig) => {
+        setTableImportConfigs(prev => ({ ...prev, [tableName]: config }));
+    };
+    
+    // Get selected tables (those with mode !== 'none')
+    const selectedTables = Object.entries(tableImportConfigs)
+        .filter(([_, config]) => config.mode !== 'none')
+        .map(([tableName, _]) => tableName);
 
     let [isConnecting, setIsConnecting] = useState(false);
 
@@ -1162,92 +1184,336 @@ export const DataLoaderForm: React.FC<{
     let tableMetadataBox = [
         <TableContainer component={Box} sx={{borderTop: '1px solid rgba(0, 0, 0, 0.1)', maxHeight: 340, overflowY: "auto"}} >
             <Table sx={{ minWidth: 650 }} size="small" aria-label="simple table">
-            <TableBody>
-                {Object.entries(tableMetadata).map(([tableName, metadata]) => {
-                    return [
-                    <TableRow
-                        key={tableName}
-                        sx={{ 
-                            '&:last-child td, &:last-child th': { border: 0 }, 
-                            '& .MuiTableCell-root': { 
-                                borderBottom: displaySamples[tableName] ? 'none' : '1px solid rgba(0, 0, 0, 0.1)',
-                                padding: 0.25, wordWrap: 'break-word', whiteSpace: 'normal'},
-                            backgroundColor: selectedTables.has(tableName) ? 'action.selected' : 'inherit',
-                            '&:hover': { backgroundColor: selectedTables.has(tableName) ? 'action.selected' : 'action.hover' },
-                            cursor: 'pointer',
-                        }}
-                        onClick={() => {
-                            const newSelected = new Set(selectedTables);
-                            if (newSelected.has(tableName)) {
-                                newSelected.delete(tableName);
-                            } else {
-                                newSelected.add(tableName);
-                            }
-                            setSelectedTables(newSelected);
-                        }}
-                    >
-                        <TableCell>
-                            <IconButton size="small" onClick={(e) => {
-                                e.stopPropagation();
-                                toggleDisplaySamples(tableName);
-                            }}>
-                                {displaySamples[tableName] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                            </IconButton>
-                        </TableCell>
-                        <TableCell sx={{maxWidth: 240}} component="th" scope="row">
-                            {tableName} <Typography variant="caption" sx={{color: "text.secondary"}} fontSize={10}>
-                                ({metadata.row_count > 0 ? `${metadata.row_count} rows × ` : ""}{metadata.columns.length} cols)
-                            </Typography>
-                        </TableCell>
-                        <TableCell sx={{maxWidth: 500}}>
-                            {metadata.columns.map((column: any) => (
-                                <Chip key={column.name} label={column.name} sx={{fontSize: 11, margin: 0.25, height: 20}} size="small" />
-                            ))}
-                        </TableCell>
-                        <TableCell sx={{width: 40}}>
-                            <Checkbox
-                                size="small"
-                                checked={selectedTables.has(tableName)}
-                            />
-                        </TableCell>
-                    </TableRow>,
-                    <TableRow key={`${tableName}-sample`}>
-                        <TableCell colSpan={4} sx={{ paddingBottom: 0, paddingTop: 0, px: 0, maxWidth: 800, overflowX: "auto", 
-                                         borderBottom: displaySamples[tableName] ? '1px solid rgba(0, 0, 0, 0.1)' : 'none' }}>
-                        <Collapse in={displaySamples[tableName]} timeout="auto" unmountOnExit>
-                            <Card variant="outlined" sx={{ ml: 5, my: 1}}>
-                                <CustomReactTable rows={metadata.sample_rows.slice(0, 9).map((row: any) => {
-                                    return Object.fromEntries(Object.entries(row).map(([key, value]: [string, any]) => {
-                                        return [key, String(value)];
-                                    }));
-                                })} 
-                                columnDefs={metadata.columns.map((column: any) => ({id: column.name, label: column.name}))} 
-                                rowsPerPageNum={-1} 
-                                compact={false} 
-                                isIncompleteTable={metadata.row_count > 10}
-                                />
-                            </Card>
-                        </Collapse>
-                        </TableCell>
-                    </TableRow>]
-                })}
-                </TableBody>
+                <TableHead>
+                    <TableRow sx={{ '& .MuiTableCell-root': { fontSize: 12 } }}>
+                        <TableCell> </TableCell>
+                        <TableCell>Table Name</TableCell>
+                        <TableCell>Columns</TableCell>
+                        <TableCell align="right">Import Options</TableCell>
+                    </TableRow>
+                </TableHead>
+                <TableBody>
+                    {Object.entries(tableMetadata).map(([tableName, metadata]) => {
+                        return [
+                        <TableRow
+                            key={tableName}
+                            sx={{ 
+                                '&:last-child td, &:last-child th': { border: 0 }, 
+                                '& .MuiTableCell-root': { 
+                                    borderBottom: displaySamples[tableName] ? 'none' : '1px solid rgba(0, 0, 0, 0.1)',
+                                    padding: 0.25, wordWrap: 'break-word', whiteSpace: 'normal'},
+                                backgroundColor: getTableConfig(tableName).mode !== 'none' ? 'action.selected' : 'inherit',
+                                '&:hover': { backgroundColor: getTableConfig(tableName).mode !== 'none' ? 'action.selected' : 'action.hover' },
+                            }}
+                        >
+                            <TableCell>
+                                <IconButton size="small" onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleDisplaySamples(tableName);
+                                }}>
+                                    {displaySamples[tableName] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                                </IconButton>
+                            </TableCell>
+                            <TableCell sx={{maxWidth: 240}} component="th" scope="row">
+                                {tableName} <Typography variant="caption" sx={{color: "text.secondary"}} fontSize={10}>
+                                    ({metadata.row_count > 0 ? `${metadata.row_count} rows × ` : ""}{metadata.columns.length} cols)
+                                </Typography>
+                            </TableCell>
+                            <TableCell sx={{maxWidth: 400}}>
+                                {metadata.columns.map((column: any) => (
+                                    <Chip key={column.name} label={column.name} sx={{fontSize: 11, margin: 0.25, height: 20}} size="small" />
+                                ))}
+                            </TableCell>
+                            <TableCell sx={{width: 220}} align="right">
+                                <Box sx={{ display: 'flex', alignItems: 'flex-end', flexDirection: 'column', mx: 1 }}>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', my: 1, gap: 0.5, flexDirection: 'row', justifyContent: 'flex-end' }}>
+                                        <ToggleButtonGroup
+                                            size="small"
+                                            value={getTableConfig(tableName).mode}
+                                            exclusive
+                                            onChange={(e, newMode) => {
+                                                if (newMode === null) return; // Prevent deselecting all
+                                                if (newMode === 'none') {
+                                                    updateTableConfig(tableName, { mode: 'none' });
+                                                } else if (newMode === 'full') {
+                                                    updateTableConfig(tableName, { mode: 'full' });
+                                                } else if (newMode === 'subset') {
+                                                    // Initialize with default values
+                                                    updateTableConfig(tableName, { 
+                                                        mode: 'subset', 
+                                                        rowLimit: Math.min(1000, metadata.row_count || 1000),
+                                                        sortColumns: [],
+                                                        sortOrder: 'asc'
+                                                    });
+                                                }
+                                            }}
+                                        >
+                                            <ToggleButton value="none" sx={{ 
+                                                px: 1, py: 0, fontSize: 11, textTransform: 'none',
+                                                '&.Mui-selected': { backgroundColor: 'grey.400', color: 'white' },
+                                                '&.Mui-selected:hover': { backgroundColor: 'grey.500' }
+                                            }}>
+                                                <Tooltip title="Don't import this table">
+                                                    <span>Skip</span>
+                                                </Tooltip>
+                                            </ToggleButton>
+                                            <ToggleButton value="full" sx={{ 
+                                                px: 1, py: 0, fontSize: 11, textTransform: 'none',
+                                                '&.Mui-selected': { backgroundColor: 'secondary.main', color: 'white' },
+                                                '&.Mui-selected:hover': { backgroundColor: 'secondary.dark' }
+                                            }}>
+                                                <Tooltip title="Import entire table">
+                                                    <span>Full</span>
+                                                </Tooltip>
+                                            </ToggleButton>
+                                            <ToggleButton value="subset" onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSubsetConfigAnchor({ element: e.currentTarget, tableName });
+                                            }} sx={{ 
+                                                px: 1, py: 0, fontSize: 11, textTransform: 'none',
+                                                '&.Mui-selected': { backgroundColor: '#f9a825', color: 'white' },
+                                                '&.Mui-selected:hover': { backgroundColor: '#f57f17' }
+                                            }}>
+                                                <Tooltip title="Import first K rows (with optional sorting)">
+                                                    <span>Subset</span>
+                                                </Tooltip>
+                                            </ToggleButton>
+                                        </ToggleButtonGroup>
+                                    </Box>
+                                    {getTableConfig(tableName).mode === 'subset' && (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexDirection: 'row', justifyContent: 'flex-end' }}>
+                                            <Button
+                                                size="small"
+                                                startIcon={<SettingsIcon sx={{ fontSize: 12 }} />}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setSubsetConfigAnchor({ element: e.currentTarget, tableName });
+                                                }}
+                                                sx={{ 
+                                                    fontSize: 11,
+                                                    textTransform: 'none',
+                                                    minWidth: 'auto',
+                                                    padding: '2px 4px',
+                                                }}
+                                            >
+                                                {(() => {
+                                                    const config = getTableConfig(tableName);
+                                                    if (config.mode === 'subset') {
+                                                        const sortInfo = config.sortColumns.length > 0 
+                                                            ? `, ${config.sortOrder === 'asc' ? '↑' : '↓'} by ${config.sortColumns.join(', ')} ` 
+                                                            : '';
+                                                        return `first ${config.rowLimit} rows${sortInfo}`;
+                                                    }
+                                                    return '';
+                                                })()}
+                                            </Button>
+                                        </Box>
+                                    )}
+                                </Box>
+                            </TableCell>
+                        </TableRow>,
+                        <TableRow key={`${tableName}-sample`}>
+                            <TableCell colSpan={4} sx={{ paddingBottom: 0, paddingTop: 0, px: 0, maxWidth: 800, overflowX: "auto", 
+                                            borderBottom: displaySamples[tableName] ? '1px solid rgba(0, 0, 0, 0.1)' : 'none' }}>
+                            <Collapse in={displaySamples[tableName]} timeout="auto" unmountOnExit>
+                                <Card variant="outlined" sx={{ ml: 5, my: 1}}>
+                                    <CustomReactTable rows={metadata.sample_rows.slice(0, 5).map((row: any) => {
+                                        return Object.fromEntries(Object.entries(row).map(([key, value]: [string, any]) => {
+                                            return [key, String(value)];
+                                        }));
+                                    })} 
+                                    columnDefs={metadata.columns.map((column: any) => ({id: column.name, label: column.name}))} 
+                                    rowsPerPageNum={-1} 
+                                    compact={false} 
+                                    isIncompleteTable={metadata.row_count > 10}
+                                    />
+                                </Card>
+                            </Collapse>
+                            </TableCell>
+                        </TableRow>]
+                    })}
+                    </TableBody>
                 </Table>
             </TableContainer>,
-        Object.keys(tableMetadata).length > 0 && <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
+        // Subset configuration popover
+        <Popover
+            key="subset-config-popover"
+            open={subsetConfigAnchor !== null}
+            anchorEl={subsetConfigAnchor?.element}
+            onClose={() => setSubsetConfigAnchor(null)}
+            anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'left',
+            }}
+            transformOrigin={{
+                vertical: 'top',
+                horizontal: 'left',
+            }}
+        >
+            {subsetConfigAnchor && (() => {
+                const tableName = subsetConfigAnchor.tableName;
+                const config = getTableConfig(tableName);
+                const metadata = tableMetadata[tableName];
+                if (config.mode !== 'subset' || !metadata) return null;
+                
+                return (
+                    <Box sx={{ fontSize: 12, p: 1.5, minWidth: 280, maxWidth: 360 }}>
+                        <Typography variant="body2" sx={{ mb: 1.5, fontSize: 14, fontWeight: 600 }}>
+                            Create a subset of "{tableName}"
+                        </Typography>
+                        <Typography variant="caption" sx={{  display: 'block', mb: 0.75, fontSize: 12, fontWeight: 500 }}>
+                            Row Limit (max: {metadata.row_count || 'unknown'} rows)
+                        </Typography>
+                        <Box sx={{ my: 2, ml: 2 }}>
+                            <TextField
+                                size="small"
+                                type="number"
+                                value={config.rowLimit}
+                                onChange={(e) => {
+                                    const value = parseInt(e.target.value) || 1;
+                                    const maxRows = metadata.row_count || 100000;
+                                    updateTableConfig(tableName, {
+                                        ...config,
+                                        rowLimit: Math.min(Math.max(1, value), maxRows)
+                                    });
+                                }}
+                                slotProps={{ 
+                                    input: {
+                                        inputProps: { 
+                                            min: 1, 
+                                            max: metadata.row_count || 100000,
+                                            step: 100
+                                        }
+                                    }
+                                }}
+                                fullWidth
+                                sx={{ mb: 1, '& .MuiInputBase-root': { fontSize: 12 } }}
+                            />
+                            <Slider
+                                size="small"
+                                value={config.rowLimit}
+                                onChange={(_, value) => {
+                                    updateTableConfig(tableName, {
+                                        ...config,
+                                        rowLimit: value as number
+                                    });
+                                }}
+                                min={1}
+                                max={metadata.row_count || 10000}
+                                step={Math.max(1, Math.floor((metadata.row_count || 10000) / 100))}
+                                valueLabelDisplay="auto"
+                            />
+                        </Box>
+                        
+                        <Typography variant="caption" sx={{  display: 'block', my: 1, fontSize: 12, fontWeight: 500 }}>
+                            Sort By <span style={{ fontWeight: 400, color: 'rgba(0, 0, 0, 0.6)' }}>(optional)</span>
+                        </Typography>
+                        <Box sx={{ my: 2, ml: 2 }}>
+                            <Autocomplete
+                                multiple
+                                size="small"
+                                options={metadata.columns.map((col: any) => col.name)}
+                                value={config.sortColumns}
+                                onChange={(_, newValue) => {
+                                    updateTableConfig(tableName, {
+                                        ...config,
+                                        sortColumns: newValue
+                                    });
+                                }}
+                                renderInput={(params) => (
+                                    <TextField 
+                                        {...params} 
+                                        placeholder="Select columns..."
+                                        size="small"
+                                        sx={{ '& .MuiInputBase-root': { fontSize: 12 } }}
+                                    />
+                                )}
+                                renderTags={(value, getTagProps) =>
+                                    value.map((option, index) => (
+                                        <Chip
+                                            {...getTagProps({ index })}
+                                            key={option}
+                                            label={option}
+                                            size="small"
+                                            sx={{ height: 20, fontSize: 11 }}
+                                        />
+                                    ))
+                                }
+                            />
+                            {config.sortColumns.length > 0 && (
+                                <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <ToggleButtonGroup
+                                        value={config.sortOrder}
+                                        exclusive
+                                        onChange={(_, newValue) => {
+                                            if (newValue) {
+                                                updateTableConfig(tableName, {
+                                                    ...config,
+                                                    sortOrder: newValue
+                                                });
+                                            }
+                                        }}
+                                        size="small"
+                                        sx={{ height: 24 }}
+                                    >
+                                        <ToggleButton value="asc" sx={{ 
+                                            px: 1.5, py: 0, fontSize: 11, textTransform: 'none',
+                                            '&.Mui-selected': { backgroundColor: 'primary.main', color: 'white' },
+                                            '&.Mui-selected:hover': { backgroundColor: 'primary.dark' }
+                                        }}>
+                                            ↑ Asc
+                                        </ToggleButton>
+                                        <ToggleButton value="desc" sx={{ 
+                                            px: 1.5, py: 0, fontSize: 11, textTransform: 'none',
+                                            '&.Mui-selected': { backgroundColor: 'primary.main', color: 'white' },
+                                            '&.Mui-selected:hover': { backgroundColor: 'primary.dark' }
+                                        }}>
+                                            ↓ Desc
+                                        </ToggleButton>
+                                    </ToggleButtonGroup>
+                                </Box>
+                            )}
+                        </Box>
+                        
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                            <Button 
+                                size="small" 
+                                variant="contained" 
+                                onClick={() => setSubsetConfigAnchor(null)}
+                                sx={{ textTransform: 'none', fontSize: 11, height: 28 }}
+                            >
+                                Done
+                            </Button>
+                        </Box>
+                    </Box>
+                );
+            })()}
+        </Popover>,
+        Object.keys(tableMetadata).length > 0 && <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2}}>
             <Button 
-                variant="outlined" 
+                variant="contained" 
                 color="secondary"
-                size="small"
-                disabled={selectedTables.size === 0}
+                disabled={selectedTables.length === 0}
                 sx={{ textTransform: 'none' }}
                 onClick={() => {
-                    const tablesToImport = Array.from(selectedTables);
+                    const tablesToImport = selectedTables;
                     onImport();
                     
                     // Import all selected tables sequentially
-                    const importPromises = tablesToImport.map(tableName => 
-                        fetchWithSession(getUrls().DATA_LOADER_INGEST_DATA, {
+                    const importPromises = tablesToImport.map(tableName => {
+                        const config = getTableConfig(tableName);
+                        
+                        // Build import options based on config
+                        const importOptions: any = {};
+                        if (config.mode === 'subset') {
+                            importOptions.row_limit = config.rowLimit;
+                            if (config.sortColumns.length > 0) {
+                                importOptions.sort_columns = config.sortColumns;
+                                importOptions.sort_order = config.sortOrder;
+                            }
+                        }
+                        
+                        return fetchWithSession(getUrls().DATA_LOADER_INGEST_DATA, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -1255,16 +1521,17 @@ export const DataLoaderForm: React.FC<{
                             body: JSON.stringify({
                                 data_loader_type: dataLoaderType, 
                                 data_loader_params: params, 
-                                table_name: tableName
+                                table_name: tableName,
+                                import_options: Object.keys(importOptions).length > 0 ? importOptions : undefined
                             })
-                        }, dispatch).then((response: Response) => response.json())
-                    );
+                        }, dispatch).then((response: Response) => response.json());
+                    });
                     
                     Promise.all(importPromises)
                         .then(results => {
                             const errors = results.filter(r => r.status !== "success");
                             if (errors.length === 0) {
-                                setSelectedTables(new Set());
+                                setTableImportConfigs({});
                                 // Get the actual table names that were created (may be sanitized)
                                 const actualTableNames = results
                                     .filter(r => r.status === "success" && r.table_name)
@@ -1284,7 +1551,7 @@ export const DataLoaderForm: React.FC<{
                         });
                 }}
             >
-                Import Selected Tables ({selectedTables.size})
+                Import Selected Tables to Local DuckDB ({selectedTables.length})
             </Button>
         </Box>
     ]

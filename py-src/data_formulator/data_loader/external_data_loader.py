@@ -93,7 +93,16 @@ class ExternalDataLoader(ABC):
         pass
 
     @abstractmethod
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
+        """Ingest data from a table into DuckDB.
+        
+        Args:
+            table_name: The source table name
+            name_as: Optional name for the destination table
+            size: Maximum number of rows to import (row limit)
+            sort_columns: Optional list of columns to sort by before applying the limit
+            sort_order: Sort direction, 'asc' for ascending or 'desc' for descending
+        """
         pass
 
     @abstractmethod

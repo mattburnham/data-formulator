@@ -220,7 +220,7 @@ MySQL Connection Instructions:
             
         return results
 
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
         """Fetch data from MySQL and ingest into DuckDB."""
         if name_as is None:
             name_as = table_name.split('.')[-1]
@@ -236,14 +236,22 @@ MySQL Connection Instructions:
         except Exception:
             raise ValueError("Size parameter must be a positive integer.")
 
+        # Build ORDER BY clause if sort_columns are specified
+        order_by_clause = ""
+        if sort_columns and len(sort_columns) > 0:
+            # Use backticks for MySQL column quoting
+            order_direction = "DESC" if sort_order == 'desc' else "ASC"
+            sanitized_cols = [f'`{col}` {order_direction}' for col in sort_columns]
+            order_by_clause = f"ORDER BY {', '.join(sanitized_cols)}"
+
         if '.' in table_name:
             parts = table_name.split('.')
             schema = sanitize_table_name(parts[0])
             tbl = sanitize_table_name(parts[1])
-            query = f"SELECT * FROM `{schema}`.`{tbl}` LIMIT {sanitized_size}"
+            query = f"SELECT * FROM `{schema}`.`{tbl}` {order_by_clause} LIMIT {sanitized_size}"
         else:
             sanitized_table_name = sanitize_table_name(table_name)
-            query = f"SELECT * FROM `{sanitized_table_name}` LIMIT {sanitized_size}"
+            query = f"SELECT * FROM `{sanitized_table_name}` {order_by_clause} LIMIT {sanitized_size}"
 
         # Fetch data from MySQL
         df = self._execute_query(query)

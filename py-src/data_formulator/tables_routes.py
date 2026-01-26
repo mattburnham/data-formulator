@@ -922,18 +922,24 @@ def data_loader_ingest_data():
         data_loader_type = data.get('data_loader_type')
         data_loader_params = data.get('data_loader_params')
         table_name = data.get('table_name')
+        import_options = data.get('import_options', {})
+        
+        # Extract import options
+        row_limit = import_options.get('row_limit', 1000000) if import_options else 1000000
+        sort_columns = import_options.get('sort_columns', None) if import_options else None
+        sort_order = import_options.get('sort_order', 'asc') if import_options else 'asc'
 
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
         with db_manager.connection(session['session_id']) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
-            data_loader.ingest_data(table_name)
+            data_loader.ingest_data(table_name, size=row_limit, sort_columns=sort_columns, sort_order=sort_order)
             
             # Get the actual table name that was created (may be sanitized)
             sanitized_name = table_name.split('.')[-1]  # Base name
             
-            # Store metadata for refresh capability
+            # Store metadata for refresh capability (include import options for future refresh)
             save_table_metadata(
                 duck_db_conn, 
                 sanitized_name, 

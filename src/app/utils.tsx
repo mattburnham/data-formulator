@@ -56,7 +56,6 @@ export function getUrls() {
         DATA_LOADER_GET_TABLE_METADATA: `/api/tables/data-loader/get-table-metadata`,
         DATA_LOADER_LIST_TABLE_METADATA: `/api/tables/data-loader/list-table-metadata`,
 
-        QUERY_COMPLETION: `/api/agent/query-completion`,
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
         GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
 
@@ -355,7 +354,38 @@ export function extractFieldsFromEncodingMap(encodingMap: EncodingMap, allFields
     }
 
     return { aggregateFields, groupByFields };
-}   
+}
+
+/**
+ * Check if a numeric value is likely a Unix timestamp (seconds or milliseconds since epoch).
+ * Returns false for values that look like years or other small numbers.
+ */
+function isLikelyTimestamp(val: number): boolean {
+    // Unix timestamps in seconds: typically 10 digits (starts from ~1970)
+    // Unix timestamps in milliseconds: typically 13 digits
+    // Reasonable timestamp range: 1970 (0) to 2100 (~4102444800 seconds)
+    
+    // Milliseconds range: 1970 to 2100
+    const minTimestampMs = 0;  // Jan 1, 1970
+    const maxTimestampMs = 4102444800000;  // ~year 2100
+    
+    // Seconds range: 1970 to 2100
+    const minTimestampSec = 0;
+    const maxTimestampSec = 4102444800;  // ~year 2100
+    
+    // Check if it looks like milliseconds (13 digits, typically > 1e12)
+    if (val >= 1e12 && val <= maxTimestampMs) {
+        return true;
+    }
+    
+    // Check if it looks like seconds (10 digits, typically > 1e9)
+    // Must be > 1e9 to avoid confusion with years (1000-9999)
+    if (val >= 1e9 && val <= maxTimestampSec) {
+        return true;
+    }
+    
+    return false;
+}
 
 export function prepVisTable(table: any[], allFields: FieldItem[], encodingMap: EncodingMap) {
     let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(encodingMap, allFields);
@@ -454,7 +484,9 @@ export const assembleVegaChart = (
             let fieldMetadata = tableMetadata[field.name];
 
             if (fieldMetadata != undefined) {
-                encodingObj["type"] = getDType(fieldMetadata.type, workingTable.map(r => r[field.name]));
+                let fieldValues = workingTable.map(r => r[field.name]);
+                encodingObj["type"] = getDType(fieldMetadata.type, fieldValues);
+
                 if (fieldMetadata.semanticType == "Date" || fieldMetadata.semanticType == "DateTime" || fieldMetadata.semanticType == "YearMonth" || fieldMetadata.semanticType == "Year" || fieldMetadata.semanticType == "Decade") {
                     if (['color', 'size', 'column', 'row'].includes(channel)) {
                         encodingObj["type"] = "nominal";
@@ -495,6 +527,17 @@ export const assembleVegaChart = (
                 // if the column or row channel and no dtype is specified, use nominal
                 encodingObj["type"] = 'nominal';
             }
+
+            if (field && encodingObj["type"] == "quantitative") {
+                // TODO: special hack: if the field values are all valid temporal values, set the type to temporal
+                let sampleValues = workingTable.slice(0, 15).filter(r => r[field.name] != undefined).map(r => r[field.name]);
+                // ISO 8601 format: YYYY-MM-DDTHH:mm:ss.sss with optional timezone (Z or +/-HH:mm)
+                const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
+                if (sampleValues.length > 0 && sampleValues.every((val: any) => isoDateRegex.test(`${val}`.trim()))) {
+                    encodingObj["type"] = "temporal";
+                }
+            }
+            
             
             if (aggrPreprocessed) {
                 if (encoding.aggregate) {
@@ -689,11 +732,24 @@ export const assembleVegaChart = (
             values = values.map((r: any) => { 
                 for (let temporalKey of temporalKeys) {
                     const val = r[temporalKey];
-                    // Convert numeric timestamps to ISO date strings for Vega-Lite compatibility
+                    const fieldMeta = tableMetadata[temporalKey];
+                    const semanticType = fieldMeta?.semanticType;
+                    
+                    // Convert to ISO date strings for Vega-Lite compatibility
                     if (typeof val === 'number') {
-                        // Detect if timestamp is in seconds (10 digits) or milliseconds (13 digits)
-                        const timestamp = val < 1e12 ? val * 1000 : val;
-                        r[temporalKey] = new Date(timestamp).toISOString();
+                        // Handle Year/Decade semantic types - these are year numbers, not timestamps
+                        if (semanticType === 'Year' || semanticType === 'Decade') {
+                            // Year values like 2018 should become "2018-01-01"
+                            r[temporalKey] = `${Math.floor(val)}`;
+                        } else if (isLikelyTimestamp(val)) {
+                            // Detect if timestamp is in seconds (10 digits) or milliseconds (13 digits)
+                            const timestamp = val < 1e12 ? val * 1000 : val;
+                            r[temporalKey] = new Date(timestamp).toISOString();
+                        } else {
+                            // Small numbers that aren't Year/Decade and don't look like timestamps
+                            // If it looks like a year (1000-9999), format as a date for consistency
+                            r[temporalKey] = String(val);
+                        }
                     } else if (val instanceof Date) {
                         r[temporalKey] = val.toISOString();
                     } else {

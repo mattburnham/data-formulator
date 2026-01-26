@@ -387,7 +387,7 @@ SQL Server Connection Instructions:
 
         return results
 
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
         """Ingest data from SQL Server table into DuckDB"""
         # Parse table name (assuming format: schema.table)
         if "." in table_name:
@@ -402,8 +402,16 @@ SQL Server Connection Instructions:
         name_as = sanitize_table_name(name_as)
 
         try:
+            # Build ORDER BY clause if sort_columns are specified
+            order_by_clause = ""
+            if sort_columns and len(sort_columns) > 0:
+                # Use square brackets for SQL Server column quoting
+                order_direction = "DESC" if sort_order == 'desc' else "ASC"
+                sanitized_cols = [f'[{col}] {order_direction}' for col in sort_columns]
+                order_by_clause = f"ORDER BY {', '.join(sanitized_cols)}"
+
             # Query data from SQL Server with limit
-            query = f"SELECT TOP {size} * FROM [{schema}].[{table}]"
+            query = f"SELECT TOP {size} * FROM [{schema}].[{table}] {order_by_clause}"
             df = self._execute_query(query)
 
             # Use the base class method to ingest DataFrame into DuckDB

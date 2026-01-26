@@ -47,6 +47,69 @@ export const CHANNEL_LIST =  ["x", "y", "x2", "y2", "id", "color", "opacity", "s
                               "row", "latitude", "longitude", "theta", "radius", "detail", "group",
                               "field 1", "field 2", "field 3", "field 4", "field 5", 'field 6'] as const;
 
+/**
+ * Ensures one axis (x or y) is nominal based on the spec and data cardinality.
+ * If neither axis is nominal, converts the one with lower cardinality to nominal.
+ * Returns "x" or "y" indicating which channel is nominal, or null if undetermined.
+ */
+const ensureNominalAxis = (vgSpec: any, table: any[], defaultToX: boolean = true): "x" | "y" | null => {
+    if (vgSpec.encoding.x?.type === "nominal") {
+        return "x";
+    } else if (vgSpec.encoding.y?.type === "nominal") {
+        return "y";
+    } else if (vgSpec.encoding.x && vgSpec.encoding.y) {
+        // Neither are nominal, determine based on cardinality
+        if (table && table.length > 0) {
+            const xField = vgSpec.encoding.x?.field;
+            const yField = vgSpec.encoding.y?.field;
+            
+            let xCardinality = Infinity;
+            let yCardinality = Infinity;
+            
+            if (xField) {
+                const xValues = [...new Set(table.map(r => r[xField]))];
+                xCardinality = xValues.length;
+            }
+            
+            if (yField) {
+                const yValues = [...new Set(table.map(r => r[yField]))];
+                yCardinality = yValues.length;
+            }
+            
+            // The axis with lower cardinality should be nominal (categories)
+            if (xCardinality <= yCardinality) {
+                vgSpec.encoding.x.type = "nominal";
+                return "x";
+            } else {
+                vgSpec.encoding.y.type = "nominal";
+                return "y";
+            }
+        } else {
+            // Default based on parameter
+            if (defaultToX) {
+                vgSpec.encoding.x.type = "nominal";
+                return "x";
+            } else {
+                vgSpec.encoding.y.type = "nominal";
+                return "y";
+            }
+        }
+    } else if (vgSpec.encoding.x) {
+        // Only x is defined
+        if (vgSpec.encoding.x.type !== "nominal") {
+            vgSpec.encoding.x.type = "nominal";
+        }
+        return "x";
+    } else if (vgSpec.encoding.y) {
+        // Only y is defined
+        if (vgSpec.encoding.y.type !== "nominal") {
+            vgSpec.encoding.y.type = "nominal";
+        }
+        return "y";
+    }
+    return null;
+};
+
 export const ChannelGroups = {
         "": ["x", "y", "x2", "y2", "latitude", "longitude", "id", "radius", "theta", "detail"],
         "legends": ["color", "group", "size", "shape", "text", "opacity" ],
@@ -175,9 +238,16 @@ const scatterPlots: ChartTemplate[] = [
         "channels": ["x", "y", "color", "opacity", "column", "row"],
         "paths": Object.fromEntries(["x", "y", "color", "opacity", "column", "row"].map(channel => [channel, ["encoding", channel]])),
         "postProcessor": (vgSpec: any,  table: any[]) => {
-            if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
-                vgSpec.encoding.x.type = "nominal";
-            } 
+            const hasX = vgSpec.encoding.x?.field;
+            const hasY = vgSpec.encoding.y?.field;
+            
+            // If only one axis is defined, show a helpful message
+            if (hasX && hasY) {
+                // Both axes defined - determine which should be nominal
+                // Vertical boxplot: x is nominal, y is quantitative
+                // Horizontal boxplot: y is nominal, x is quantitative
+                ensureNominalAxis(vgSpec, table, true);
+            }
             return vgSpec;
         }
     }
@@ -275,50 +345,8 @@ const barCharts: ChartTemplate[] = [
         "postProcessor": (vgSpec: any, table: any[]) => {
             if (!vgSpec.encoding.color?.field) return vgSpec;
             
-            let nominalChannel: "x" | "y" | null = null;
-            let offsetChannel: "xOffset" | "yOffset" | null = null;
-            
-            if (vgSpec.encoding.x?.type === "nominal") {
-                nominalChannel = "x";
-                offsetChannel = "xOffset";
-            } else if (vgSpec.encoding.y?.type === "nominal") {
-                nominalChannel = "y";
-                offsetChannel = "yOffset";
-            } else if (vgSpec.encoding.x && vgSpec.encoding.y) {
-                // Neither are nominal, convert the one with lower cardinality to nominal
-                if (table && table.length > 0) {
-                    const xField = vgSpec.encoding.x?.field;
-                    const yField = vgSpec.encoding.y?.field;
-                    
-                    let xCardinality = Infinity;
-                    let yCardinality = Infinity;
-                    
-                    if (xField) {
-                        const xValues = [...new Set(table.map(r => r[xField]))];
-                        xCardinality = xValues.length;
-                    }
-                    
-                    if (yField) {
-                        const yValues = [...new Set(table.map(r => r[yField]))];
-                        yCardinality = yValues.length;
-                    }
-                    
-                    if (xCardinality <= yCardinality) {
-                        nominalChannel = "x";
-                        offsetChannel = "xOffset";
-                        vgSpec.encoding.x.type = "nominal";
-                    } else {
-                        nominalChannel = "y";
-                        offsetChannel = "yOffset";
-                        vgSpec.encoding.y.type = "nominal";
-                    }
-                } else {
-                    // Default: convert x to nominal and use xOffset if no table data
-                    nominalChannel = "x";
-                    offsetChannel = "xOffset";
-                    vgSpec.encoding.x.type = "nominal";
-                }
-            }
+            const nominalChannel = ensureNominalAxis(vgSpec, table, true);
+            const offsetChannel = nominalChannel === "x" ? "xOffset" : nominalChannel === "y" ? "yOffset" : null;
             
             if (nominalChannel && offsetChannel) {
                 if (!vgSpec.encoding[offsetChannel]) {

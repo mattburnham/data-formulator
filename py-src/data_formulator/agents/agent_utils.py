@@ -149,34 +149,6 @@ def extract_json_objects(text):
     return json_objects  
 
 
-def insert_candidates(code, table, dialog, candidate_groups):
-    """ Try to insert a candidate into existing candidate groups
-    Args:
-        code: code candidate
-        table: json records table
-        candidate_groups: current candidate group
-    Returns:
-        a boolean flag incidate whether new_group_created
-    """
-    table_headers = sorted(table[0].keys())
-    t_hash = table_hash([{c: r[c] for c in table_headers} for r in table])
-    if t_hash in candidate_groups:
-        candidate_groups[t_hash].append({"code": code, "content": table, "dialog": dialog})
-        new_group_created = False
-    else:
-        candidate_groups[t_hash] = [{"code": code, "content": table, "dialog": dialog}]
-        new_group_created = True
-    return new_group_created
-
-def dedup_data_transform_candidates(candidates):
-    """each candidate is a tuple of {status: ..., code: ..., data: ..., dialog: ...},
-    this function extracts candidates that are 'ok', and removes uncessary duplicates"""
-    candidate_groups = {}
-    for candidate in candidates:
-        insert_candidates(candidate["code"], candidate['data'], candidate['dialog'], candidate_groups)
-    return [items[0] for _, items in candidate_groups.items()]
-
-
 def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
     # Convert lists to strings to make them hashable
     def make_hashable(val):
@@ -215,7 +187,7 @@ def get_field_summary(field_name, df, field_sample_size, max_val_chars=100):
 
     return f"{field_name} -- type: {df[field_name].dtype}, values: {val_str}"
 
-def generate_data_summary(input_tables, include_data_samples=True, field_sample_size=7, max_val_chars=140):
+def generate_data_summary(input_tables, include_data_samples=True, field_sample_size=7, max_val_chars=140, table_name_prefix="Table"):
     """
     Generate a natural, well-organized summary of input tables.
     
@@ -238,7 +210,7 @@ def generate_data_summary(input_tables, include_data_samples=True, field_sample_
         sections = []
         
         # 1. Table Header with basic stats
-        header = f"## Table {idx + 1}: {name}"
+        header = f"## {table_name_prefix} {idx + 1}: {name}"
         if num_rows > 0:
             header += f" ({num_rows:,} rows × {num_cols} columns)"
         sections.append(header)
@@ -267,10 +239,6 @@ def generate_data_summary(input_tables, include_data_samples=True, field_sample_
     separator = "\n" + "─" * 60 + "\n\n"
     joined_summaries = separator.join(table_summaries)
     
-    # Natural introduction
-    num_tables = len(input_tables)
-    intro = f"Here are {num_tables} dataset{'s' if num_tables != 1 else ''} with their summaries:\n\n"
-    
-    full_summary = intro + joined_summaries
+    full_summary = joined_summaries
     return full_summary
 

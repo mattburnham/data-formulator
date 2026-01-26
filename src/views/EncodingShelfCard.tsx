@@ -330,10 +330,6 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
         }));
     };
     
-    // Add state for developer message dialog
-    const [devMessageOpen, setDevMessageOpen] = useState<boolean>(false);
-
-
     let encodingBoxGroups = Object.entries(ChannelGroups)
         .filter(([group, channelList]) => channelList.some(ch => Object.keys(encodingMap).includes(ch)))
         .map(([group, channelList]) => {
@@ -395,24 +391,20 @@ export const EncodingShelfCard: FC<EncodingShelfCardProps> = function ({ chartId
                     }));
             }
 
-            // Get the root table (first table in actionTableIds)
-            const rootTable = tables.find(t => t.id === actionTableIds[0]);
-            if (!rootTable) {
-                throw new Error('No root table found');
-            }
-
             let chartAvailable = checkChartAvailability(chart, conceptShelfItems, currentTable.rows);
             let currentChartPng = chartAvailable ? await vegaLiteSpecToPng(assembleVegaChart(chart.chartType, chart.encodingMap, activeFields, currentTable.rows, currentTable.metadata, 20)) : undefined;
+
+            let actionTables = actionTableIds.map(id => tables.find(t => t.id == id) as DictTable);
 
             const token = String(Date.now());
             const messageBody = JSON.stringify({
                 token: token,
                 model: activeModel,
-                input_tables: [{
-                    name: rootTable.virtual?.tableId || rootTable.id.replace(/\.[^/.]+$/, ""),
-                    rows: rootTable.rows,
-                    attached_metadata: rootTable.attachedMetadata
-                }],
+                input_tables: actionTables.map(t => ({
+                    name: t.virtual?.tableId || t.id.replace(/\.[^/.]+$/, ""),
+                    rows: t.rows,
+                    attached_metadata: t.attachedMetadata
+                })),
                 language: currentTable.virtual ? "sql" : "python",
                 exploration_thread: explorationThread,
                 current_data_sample: currentTable.rows.slice(0, 10),

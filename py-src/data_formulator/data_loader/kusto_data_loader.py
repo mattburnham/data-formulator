@@ -197,9 +197,17 @@ Required Parameters:
 
         return tables
     
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 5000000) -> pd.DataFrame:
+    def ingest_data(self, table_name: str, name_as: str = None, size: int = 5000000, sort_columns: List[str] = None, sort_order: str = 'asc') -> pd.DataFrame:
         if name_as is None:
             name_as = table_name
+        
+        # Build sort clause for Kusto (KQL syntax)
+        sort_clause = ""
+        if sort_columns and len(sort_columns) > 0:
+            # Kusto uses | sort by col1 asc/desc syntax
+            order_direction = "desc" if sort_order == 'desc' else "asc"
+            sort_cols_with_order = [f"{col} {order_direction}" for col in sort_columns]
+            sort_clause = f" | sort by {', '.join(sort_cols_with_order)}"
         
         # Create a subquery that applies random ordering once with a fixed seed
         total_rows_ingested = 0
@@ -216,7 +224,8 @@ Required Parameters:
 
         while total_rows_ingested < size:
             try:
-                query = f"['{table_name}'] | serialize | extend rn=row_number() | where rn >= {total_rows_ingested} and rn < {total_rows_ingested + chunk_size} | project-away rn"
+                # Apply sort if specified, then apply row numbering for pagination
+                query = f"['{table_name}']{sort_clause} | serialize | extend rn=row_number() | where rn >= {total_rows_ingested} and rn < {total_rows_ingested + chunk_size} | project-away rn"
                 chunk_df = self.query(query)
             except Exception as e:
                 chunk_size = int(chunk_size * 0.8)

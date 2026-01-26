@@ -4,7 +4,7 @@
 import json
 
 from data_formulator.agents.agent_utils import extract_json_objects, extract_code_from_gpt_response
-from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
+from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary
 
 import random
 import string
@@ -37,6 +37,7 @@ Concretely, you should infer the appropriate data and create a SQL query based o
     "recap": "..." // string, a short summary of the user's goal.
     "display_instruction": "..." // string, the even shorter verb phrase describing the users' goal.
     "recommendation": "..." // string, explain why this recommendation is made
+    "input_tables": [...] // string[], describe names of the input tables that will be used in the transformation.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preseve intermediate fields here
     "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
     "chart_encodings": {
@@ -69,6 +70,9 @@ Concretely:
         - if you mention column names from the input or the output data, highlight the text in **bold**.
             * the column can either be a column in the input data, or a new column that will be computed in the output data.
             * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
+    - determine "input_tables", the names of a subset of input tables from [CONTEXT] section that will be used to achieve the user's goal.
+        - **IMPORTANT** Note that the Table 1 in [CONTEXT] section is the table the user is currently viewing, it should take precedence if the user refers to insights about the "current table".
+        - At the same time, leverage table information to determine which tables are relevant to the user's goal and should be used.
     - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
     - "chart_encodings" should specify which fields should be used to create the visualization
         - decide which visual channels should be used to create the visualization appropriate for the chart type.
@@ -188,6 +192,7 @@ table_0 (student_exam) sample:
 
 ```json
 {  
+    "input_tables": ["student_exam"],
     "recap": "Rank students based on their average scores",
     "display_instruction": "Rank students by **average scores**",
     "mode": "infer",
@@ -318,11 +323,7 @@ class SQLDataRecAgent(object):
     
 
     def run(self, input_tables, description, n=1, prev_messages: list[dict] = []):
-        data_summary = ""
-        for table in input_tables:
-            table_name = sanitize_table_name(table['name'])
-            table_summary_str = get_sql_table_statistics_str(self.conn, table_name)
-            data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
+        data_summary = generate_sql_data_summary(self.conn, input_tables)
 
         user_query = f"[CONTEXT]\n\n{data_summary}\n\n[GOAL]\n\n{description}"
         if len(prev_messages) > 0:

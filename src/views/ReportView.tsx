@@ -51,6 +51,7 @@ import { Collapse } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { convertToChartifact, openChartifactViewer } from './ChartifactDialog';
+import StreamIcon from '@mui/icons-material/Stream';
 
 // Typography constants
 const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"';
@@ -231,13 +232,13 @@ export const ReportView: FC = () => {
     const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string>('');
-    const [style, setStyle] = useState<string>('short note');
+    const [style, setStyle] = useState<string>('social post');
     const [mode, setMode] = useState<'compose' | 'post'>(allGeneratedReports.length > 0 ? 'post' : 'compose');
 
     // Local state for current report
     const [currentReportId, setCurrentReportId] = useState<string | undefined>(undefined);
     const [generatedReport, setGeneratedReport] = useState<string>('');
-    const [generatedStyle, setGeneratedStyle] = useState<string>('short note');
+    const [generatedStyle, setGeneratedStyle] = useState<string>('social post');
     const [cachedReportImages, setCachedReportImages] = useState<Record<string, { url: string; width: number; height: number }>>({});
     const [shareButtonSuccess, setShareButtonSuccess] = useState(false);
     const [hideTableOfContents, setHideTableOfContents] = useState(false);
@@ -798,7 +799,7 @@ export const ReportView: FC = () => {
                 // No reports left, clear the view and go back to compose mode
                 setCurrentReportId(undefined);
                 setGeneratedReport('');
-                setGeneratedStyle('short note');
+                setGeneratedStyle('social post');
                 setMode('compose');
             }
         }
@@ -896,7 +897,7 @@ export const ReportView: FC = () => {
                                 }}
                             >
                                 {[
-                                    { value: 'short note', label: 'short note' },
+                                    { value: 'live report', label: 'live report' },
                                     { value: 'blog post', label: 'blog post' },
                                     { value: 'social post', label: 'social post' },
                                     { value: 'executive summary', label: 'executive summary' },
@@ -912,7 +913,7 @@ export const ReportView: FC = () => {
                                             minWidth: 'auto'
                                         }}
                                     >
-                                        {option.label}
+                                        {option.value === 'live report' ? <StreamIcon sx={{ fontSize: 16, mr: 1 }} /> : <></>} {option.label}
                                     </ToggleButton>
                                 ))}
                             </ToggleButtonGroup>

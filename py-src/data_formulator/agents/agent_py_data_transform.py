@@ -35,6 +35,8 @@ Concretely, you should first refine users' goal and then create a python functio
                 * the column can either be a column in the input data, or a new column that will be computed in the output data.
                 * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
         - determine "input_tables", the names of a subset of input tables from [CONTEXT] section that will be used to achieve the user's goal.
+            - **IMPORTANT** Note that the Table 1 in [CONTEXT] section is the table the user is currently viewing, it should take precedence if the user refers to insights about the "current table".
+            - At the same time, leverage table information to determine which tables are relevant to the user's goal and should be used.
         - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
         - then decide "chart_encodings", which maps visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized, 
             - the "chart_encodings" should be created to support the user's "chart_type".
