@@ -1753,10 +1753,11 @@ export const DataLoaderForm: React.FC<{
                                 onChange={(event) => setTableFilter(event.target.value)}
                             />
                         </Box>
-                        {paramDefs.length > 0 && <ButtonGroup sx={{height: 32, mt: 'auto'}} size="small" 
-                         variant="contained" color="primary">
+                        {paramDefs.length > 0 && 
                             <Button 
-                                sx={{textTransform: "none"}}
+                                variant="contained"
+                                color="primary"
+                                sx={{textTransform: "none", minWidth: 120}}
                                 onClick={() => {
                                     setIsConnecting(true);
                                     fetchWithSession(getUrls().DATA_LOADER_LIST_TABLES, {
@@ -1787,9 +1788,8 @@ export const DataLoaderForm: React.FC<{
                                     setIsConnecting(false);
                                 });
                             }}>
-                                connect {tableFilter.trim() ? "with filter" : ""}
-                            </Button>
-                        </ButtonGroup>}
+                                Connect {tableFilter.trim() ? "with filter" : ""}
+                            </Button>}
                     </Box>
                     <Box  sx={{display: "flex", flexDirection: "row", alignItems: "center", gap: 1, ml: 4, mt: 4}}>
                         
