@@ -14,12 +14,10 @@ import {
     TextField,
     Typography,
     Tooltip,
-    LinearProgress,
     Link,
     Input,
     alpha,
     useTheme,
-    Card,
 } from '@mui/material';
 
 import CloseIcon from '@mui/icons-material/Close';
@@ -30,7 +28,6 @@ import StorageIcon from '@mui/icons-material/Storage';
 import ImageSearchIcon from '@mui/icons-material/ImageSearch';
 import ExploreIcon from '@mui/icons-material/Explore';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import Paper from '@mui/material/Paper';
 
@@ -43,8 +40,8 @@ import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrappe
 import { DataLoadingChat } from './DataLoadingChat';
 import { DatasetSelectionView, DatasetMetadata } from './TableSelectionView';
 import { getUrls } from '../app/utils';
-import { CustomReactTable } from './ReactTable';
 import { DBManagerPane } from './DBTableManager';
+import { MultiTablePreview } from './MultiTablePreview';
 import { 
     FormControlLabel, 
     Switch
@@ -84,190 +81,6 @@ interface DataSourceCardProps {
     disabled?: boolean;
     disabledReason?: string;
 }
-
-interface PreviewPanelProps {
-    title: string;
-    loading: boolean;
-    error: string | null;
-    table?: DictTable | null;
-    tables?: DictTable[] | null;
-    emptyLabel: string;
-    meta?: string;
-    onRemoveTable?: (index: number) => void;
-    activeIndex?: number;
-    onActiveIndexChange?: (index: number) => void;
-}
-
-const PreviewPanel: React.FC<PreviewPanelProps> = ({
-    title,
-    loading,
-    error,
-    table,
-    tables,
-    emptyLabel,
-    meta,
-    onRemoveTable,
-    activeIndex: controlledActiveIndex,
-    onActiveIndexChange,
-}) => {
-    const previewTables = tables ?? (table ? [table] : null);
-    const [internalActiveIndex, setInternalActiveIndex] = useState(0);
-    const activeIndex = controlledActiveIndex !== undefined ? controlledActiveIndex : internalActiveIndex;
-    const setActiveIndex = onActiveIndexChange || setInternalActiveIndex;
-
-    useEffect(() => {
-        if (!previewTables || previewTables.length === 0) {
-            if (onActiveIndexChange) {
-                onActiveIndexChange(0);
-            } else {
-                setInternalActiveIndex(0);
-            }
-            return;
-        }
-        if (activeIndex > previewTables.length - 1) {
-            const newIndex = previewTables.length - 1;
-            if (onActiveIndexChange) {
-                onActiveIndexChange(newIndex);
-            } else {
-                setInternalActiveIndex(newIndex);
-            }
-        }
-    }, [previewTables, activeIndex, onActiveIndexChange]);
-
-    const activeTable = previewTables && previewTables.length > 0 ? previewTables[activeIndex] : null;
-    return (
-        <Box
-            sx={{
-                p: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 1,
-                minHeight: 120,
-            }}
-        >
-            {loading && <LinearProgress />}
-
-            {error && (
-                <Typography variant="caption" color="error">
-                    {error}
-                </Typography>
-            )}
-
-            {!loading && !error && (!previewTables || previewTables.length === 0) && (
-                <Typography variant="caption" color="text.secondary">
-                    {emptyLabel}
-                </Typography>
-            )}
-
-            {previewTables && previewTables.length > 0 && (
-                <Box>
-                    <Box
-                        sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            flexWrap: 'nowrap',
-                            gap: 0.25,
-                            mb: 0.5,
-                            pb: 0.25,
-                            overflowX: 'auto',
-                            overflowY: 'hidden',
-                            '&::-webkit-scrollbar': { height: 4 },
-                            '&::-webkit-scrollbar-thumb': {
-                                backgroundColor: 'action.disabled',
-                                borderRadius: 4,
-                            },
-                        }}
-                    >
-                        <Typography variant="caption" sx={{ fontSize: '0.625rem', fontWeight: 'bold' }}>Preview</Typography>
-                        {previewTables.map((t, idx) => {
-                            const label = t.displayId || t.id;
-                            const isSelected = idx === activeIndex;
-                            return (
-                                <Tooltip key={`${t.id}-${idx}`} title={label} placement="top" arrow>
-                                    <Chip
-                                        label={label}
-                                        size="small"
-                                        onClick={() => {
-                                            if (onActiveIndexChange) {
-                                                onActiveIndexChange(idx);
-                                            } else {
-                                                setInternalActiveIndex(idx);
-                                            }
-                                        }}
-                                        sx={{
-                                            borderRadius: 1,
-                                            cursor: 'pointer',
-                                            maxWidth: 160,
-                                            backgroundColor: (theme) => 
-                                                isSelected 
-                                                    ? alpha(theme.palette.primary.main, 0.12)
-                                                    : 'transparent',
-                                            borderColor: (theme) => 
-                                                isSelected 
-                                                    ? alpha(theme.palette.primary.main, 0.5)
-                                                    : undefined,
-                                            color: (theme) => 
-                                                isSelected 
-                                                    ? theme.palette.primary.main
-                                                    : theme.palette.text.secondary,
-                                            '& .MuiChip-label': {
-                                                fontSize: '0.625rem',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap',
-                                                maxWidth: 140,
-                                            },
-                                            '&:hover': {
-                                                backgroundColor: (theme) => 
-                                                    isSelected 
-                                                        ? alpha(theme.palette.primary.main, 0.16)
-                                                        : alpha(theme.palette.primary.main, 0.08),
-                                            },
-                                        }}
-                                    />
-                                </Tooltip>
-                            );
-                        })}
-                        {onRemoveTable && (
-                            <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() => onRemoveTable(activeIndex)}
-                                sx={{ ml: 'auto', flexShrink: 0 }}
-                                aria-label="Remove table"
-                            >
-                                <DeleteIcon fontSize="small" />
-                            </IconButton>
-                        )}
-                    </Box>
-
-                    {activeTable && (
-                        <Box>
-                            <Card variant="outlined" sx={{ pb: 0.5 }}>
-                                <CustomReactTable
-                                    rows={activeTable.rows.slice(0, 12)}
-                                    columnDefs={activeTable.names.map(name => ({
-                                        id: name,
-                                        label: name,
-                                        minWidth: 60,
-                                    }))}
-                                    rowsPerPageNum={-1}
-                                    compact={true}
-                                    isIncompleteTable={activeTable.rows.length > 12}
-                                    maxHeight={200}
-                                />
-                            
-                            </Card>
-                            <Typography variant="caption" color="text.secondary">
-                            {activeTable.rows.length} rows × {activeTable.names.length} columns
-                        </Typography>
-                      </Box>
-                    )}
-                </Box>
-            )}
-        </Box>
-    );
-};
 
 const DataSourceCard: React.FC<DataSourceCardProps> = ({ 
     icon, 
@@ -363,6 +176,279 @@ const getUniqueTableName = (baseName: string, existingNames: Set<string>): strin
     return uniqueName;
 };
 
+// Reusable Data Load Menu Component
+export interface DataLoadMenuProps {
+    onSelectTab: (tab: UploadTabType) => void;
+    serverConfig?: { DISABLE_DATABASE?: boolean };
+    variant?: 'dialog' | 'page'; // 'dialog' uses smaller cards, 'page' uses larger cards
+}
+
+export const DataLoadMenu: React.FC<DataLoadMenuProps> = ({ 
+    onSelectTab, 
+    serverConfig = { DISABLE_DATABASE: false },
+    variant = 'dialog'
+}) => {
+    const theme = useTheme();
+    // Data source configurations
+    const regularDataSources = [
+        { 
+            value: 'explore' as UploadTabType, 
+            title: 'Sample Datasets', 
+            description: 'Explore and load curated example datasets',
+            icon: <ExploreIcon />, 
+            disabled: false,
+            disabledReason: undefined
+        },
+        { 
+            value: 'upload' as UploadTabType, 
+            title: 'Upload File', 
+            description: 'Upload local files (CSV, TSV, JSON, Excel)',
+            icon: <UploadFileIcon />, 
+            disabled: false,
+            disabledReason: undefined
+        },
+        { 
+            value: 'paste' as UploadTabType, 
+            title: 'Paste Data', 
+            description: 'Paste tabular data directly from clipboard',
+            icon: <ContentPasteIcon />, 
+            disabled: false,
+            disabledReason: undefined
+        },
+        { 
+            value: 'extract' as UploadTabType, 
+            title: 'Extract Unstructured Data', 
+            description: 'Extract tables from images or text using AI',
+            icon: <ImageSearchIcon />, 
+            disabled: false,
+            disabledReason: undefined
+        },
+    ];
+
+    const liveDataSources = [
+        { 
+            value: 'url' as UploadTabType, 
+            title: 'Load from URL', 
+            description: 'Load data from a URL with optional auto-refresh',
+            icon: <LinkIcon />, 
+            disabled: false,
+            disabledReason: undefined
+        },
+        { 
+            value: 'database' as UploadTabType, 
+            title: 'Database', 
+            description: 'Connect to databases or data services',
+            icon: <StorageIcon />, 
+            disabled: serverConfig.DISABLE_DATABASE,
+            disabledReason: 'Database connection is disabled in this environment'
+        },
+    ];
+
+    if (variant === 'page') {
+        // Page variant: 3-column grid, first column for liveDataSources, second 2 columns for regularDataSources
+        return (
+            <Box sx={{ 
+                width: '100%',
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) repeat(2, minmax(0, 1fr))',
+                gridTemplateRows: 'auto repeat(2, auto)',
+                gap: 1.5,
+                rowGap: 2,
+                mx: 0,
+                textAlign: 'left',
+            }}>
+                {/* Section Titles */}
+                <Typography 
+                    variant="body2" 
+                    color="text.secondary" 
+                    sx={{ 
+                        gridColumn: 1,
+                        gridRow: 1,
+                        textAlign: 'left',
+                        letterSpacing: '0.02em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        position: 'relative',
+                        zIndex: 1,
+                        marginRight: 3, // Extra space between first column and other columns
+                    }}
+                >
+                    <StreamIcon sx={{ fontSize: 14, animation: 'pulse 2s infinite', '@keyframes pulse': {
+                        '0%': { opacity: 1, color: 'primary.main' },
+                        '50%': { opacity: 0.5, color: 'primary.light' },
+                        '100%': { opacity: 1, color: 'primary.main' },
+                    }, }} /> Connect to live data sources
+                </Typography>
+                <Typography 
+                    variant="body2" 
+                    color="text.secondary" 
+                    sx={{ 
+                        gridColumn: '2 / 3',
+                        gridRow: 1,
+                        textAlign: 'left',
+                        letterSpacing: '0.02em'
+                    }}
+                >
+                    Load local data
+                </Typography>
+                
+                {/* Background for Live Data Column */}
+                <Box
+                    sx={{
+                        gridColumn: 1,
+                        gridRow: '1 / -1',
+                        backgroundColor: alpha(theme.palette.primary.main, 0.03),
+                        borderRadius: 1,
+                        position: 'relative',
+                        zIndex: 0,
+                        // Extend into gaps to create continuous background
+                        marginTop: '-16px', // Extend into row gaps (2 * 8px = 16px)
+                        marginBottom: '-16px',
+                        marginLeft: '-12px', // Extend into left column gap (1.5 * 8px = 12px)
+                        marginRight: '12px', // Extra space between first column and other columns (3 * 8px = 24px total)
+                        paddingTop: '16px',
+                        paddingBottom: '16px',
+                        paddingLeft: '12px',
+                        paddingRight: '12px',
+                    }}
+                />
+                
+                {/* Live Data Sources - fill last column, 2 rows */}
+                {liveDataSources.map((source, index) => (
+                    <Box
+                        key={source.value}
+                        sx={{
+                            gridColumn: 1,
+                            gridRow: index + 2, // Start from row 2 (after title row)
+                            position: 'relative',
+                            zIndex: 1,
+                            marginRight: 3, // Extra space between first column and other columns
+                        }}
+                    >
+                        <DataSourceCard
+                            icon={source.icon}
+                            title={source.title}
+                            description={source.description}
+                            onClick={() => onSelectTab(source.value)}
+                            disabled={source.disabled}
+                            disabledReason={source.disabledReason}
+                        />
+                    </Box>
+                ))}
+                {/* Regular Data Sources - fill first 2 columns, 2 rows */}
+                {regularDataSources.map((source, index) => (
+                    <Box
+                        key={source.value}
+                        sx={{
+                            gridColumn: (index % 2) + 2,
+                            gridRow: Math.floor(index / 2) + 2, // Start from row 2 (after title row)
+                        }}
+                    >
+                        <DataSourceCard
+                            icon={source.icon}
+                            title={source.title}
+                            description={source.description}
+                            onClick={() => onSelectTab(source.value)}
+                            disabled={source.disabled}
+                            disabledReason={source.disabledReason}
+                        />
+                    </Box>
+                ))}
+                
+            </Box>
+        );
+    }
+
+    // Dialog variant: original two-section layout
+    return (
+        <Box sx={{ 
+            width: '100%',
+            maxWidth: 860,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            mx: 0,
+            textAlign: 'left',
+        }}>
+            {/* Local Data Sources */}
+            <Typography 
+                variant="body2" 
+                color="text.secondary" 
+                sx={{ 
+                    textAlign: 'left',
+                    mb: 1,
+                    mt: 1,
+                    opacity: 0.6,
+                    fontSize: '0.75rem',
+                    letterSpacing: '0.02em'
+                }}
+            >
+                Local data
+            </Typography>
+
+            <Box sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                gap: 1.5,
+                mb: 0,
+            }}>
+                {regularDataSources.map((source) => (
+                    <DataSourceCard
+                        key={source.value}
+                        icon={source.icon}
+                        title={source.title}
+                        description={source.description}
+                        onClick={() => onSelectTab(source.value)}
+                        disabled={source.disabled}
+                        disabledReason={source.disabledReason}
+                    />
+                ))}
+            </Box>
+
+            {/* Live Data Sources */}
+            <Typography 
+                variant="body2" 
+                color="text.secondary" 
+                sx={{ 
+                    textAlign: 'left',
+                    my: 1,
+                    opacity: 0.6,
+                    fontSize: '0.75rem',
+                    letterSpacing: '0.02em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                }}
+            >
+                <StreamIcon sx={{ fontSize: 14, animation: 'pulse 2s infinite', '@keyframes pulse': {
+                    '0%': { opacity: 1, color: 'primary.main' },
+                    '50%': { opacity: 0.5, color: 'primary.light' },
+                    '100%': { opacity: 1, color: 'primary.main' },
+                }, }} /> Or connect to a data source (with optional auto-refresh)
+            </Typography>
+
+            <Box sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                gap: 1.5,
+            }}>
+                {liveDataSources.map((source) => (
+                    <DataSourceCard
+                        key={source.value}
+                        icon={source.icon}
+                        title={source.title}
+                        description={source.description}
+                        onClick={() => onSelectTab(source.value)}
+                        disabled={source.disabled}
+                        disabledReason={source.disabledReason}
+                    />
+                ))}
+            </Box>
+        </Box>
+    );
+};
+
 export interface UnifiedDataUploadDialogProps {
     open: boolean;
     onClose: () => void;
@@ -383,6 +469,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
     const [activeTab, setActiveTab] = useState<UploadTabType>(initialTab === 'menu' ? 'menu' : initialTab);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const urlInputRef = useRef<HTMLInputElement>(null);
 
     // Paste tab state
     const [pasteContent, setPasteContent] = useState<string>("");
@@ -406,6 +493,9 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const [urlPreviewLoading, setUrlPreviewLoading] = useState<boolean>(false);
     const [urlPreviewError, setUrlPreviewError] = useState<string | null>(null);
     const [urlPreviewActiveIndex, setUrlPreviewActiveIndex] = useState<number>(0);
+    
+    // Example URLs state
+    const [exampleUrls, setExampleUrls] = useState<Array<{ label: string; url: string; refreshSeconds: number }>>([]);
 
     // Sample datasets state
     const [datasetPreviews, setDatasetPreviews] = useState<DatasetMetadata[]>([]);
@@ -427,62 +517,78 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     useEffect(() => {
         if (open && activeTab === 'explore') {
             fetch(`${getUrls().EXAMPLE_DATASETS}`)
-                .then((response) => response.json())
-                .then((result) => {
-                    let datasets: DatasetMetadata[] = result.map((info: any) => {
-                        let tables = info["tables"].map((table: any) => {
-                            if (table["format"] == "json") {
-                                return {
-                                    table_name: table["name"],
-                                    url: table["url"],
-                                    format: table["format"],
-                                    sample: table["sample"],
-                                }
+            .then((response) => response.json())
+            .then((result) => {
+                let datasets: DatasetMetadata[] = result.map((info: any) => {
+                    let tables = info["tables"].map((table: any) => {
+                        if (table["format"] == "json") {
+                            return {
+                                table_name: table["name"],
+                                url: table["url"],
+                                format: table["format"],
+                                sample: table["sample"],
                             }
-                            else if (table["format"] == "csv" || table["format"] == "tsv") {
-                                const delimiter = table["format"] === "csv" ? "," : "\t";
-                                const rows = table["sample"]
-                                    .split("\n")
-                                    .map((row: string) => row.split(delimiter));
-                                
-                                if (rows.length > 0) {
-                                    const headers = rows[0];
-                                    const dataRows = rows.slice(1);
-                                    const sampleData = dataRows.map((row: string[]) => {
-                                        const obj: any = {};
-                                        headers.forEach((header: string, index: number) => {
-                                            obj[header] = row[index] || '';
-                                        });
-                                        return obj;
+                        }
+                        else if (table["format"] == "csv" || table["format"] == "tsv") {
+                            const delimiter = table["format"] === "csv" ? "," : "\t";
+                            const rows = table["sample"]
+                                .split("\n")
+                                .map((row: string) => row.split(delimiter));
+                            
+                            if (rows.length > 0) {
+                                const headers = rows[0];
+                                const dataRows = rows.slice(1);
+                                const sampleData = dataRows.map((row: string[]) => {
+                                    const obj: any = {};
+                                    headers.forEach((header: string, index: number) => {
+                                        obj[header] = row[index] || '';
                                     });
-                                    
-                                    return {
-                                        table_name: table["name"],
-                                        url: table["url"],
-                                        format: table["format"],
-                                        sample: sampleData,
-                                    };
-                                }
+                                    return obj;
+                                });
                                 
                                 return {
                                     table_name: table["name"],
                                     url: table["url"],
                                     format: table["format"],
-                                    sample: [],
+                                    sample: sampleData,
                                 };
                             }
-                        })
-                        return { 
-                            tables: tables, 
-                            name: info["name"], 
-                            description: info["description"], 
-                            source: info["source"],
-                            live: info["live"],
-                            refreshIntervalSeconds: info["refreshIntervalSeconds"]
+                            
+                            return {
+                                table_name: table["name"],
+                                url: table["url"],
+                                format: table["format"],
+                                sample: [],
+                            };
                         }
-                    }).filter((t: DatasetMetadata | undefined) => t != undefined);
-                    setDatasetPreviews(datasets);
-                });
+                    })
+                    return { 
+                        tables: tables, 
+                        name: info["name"], 
+                        source: info["source"],
+                        live: info["live"],
+                        refreshIntervalSeconds: info["refreshIntervalSeconds"]
+                    }
+                }).filter((t: DatasetMetadata | undefined) => t != undefined);
+                setDatasetPreviews(datasets);
+            });
+        } else if (open && activeTab === 'url') {
+            fetch(`${window.location.origin}/api/demo-stream/info`)
+            .then(res => res.json())
+            .then(data => {
+                const demoExamples = data.demo_examples
+                    .map((ex: any) => ({
+                        label: ex.name,
+                        url: ex.url,
+                        refreshSeconds: ex.refresh_seconds || 60
+                }));
+                
+                setExampleUrls(demoExamples);
+            })
+            .catch((err) => {
+                console.error('Failed to load examples:', err);
+            })
+            .finally(() => { });
         }
     }, [open, activeTab]);
 
@@ -505,6 +611,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         setUrlPreviewLoading(false);
         setUrlPreviewError(null);
         setUrlPreviewActiveIndex(0);
+        setExampleUrls([]);
         onClose();
     }, [onClose]);
 
@@ -698,18 +805,22 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     };
 
 
-    const handleURLPreview = (): void => {
+    const handleURLPreview = (urlToUse: string): void => {
+        if (!urlToUse) {
+            return;
+        }
         setUrlPreviewLoading(true);
         setUrlPreviewError(null);
         setUrlPreviewTables(null);
 
+
         // Support relative URLs by constructing full URL
-        let fullUrl = tableURL;
-        if (tableURL.startsWith('/')) {
-            fullUrl = window.location.origin + tableURL;
+        let fullUrl = urlToUse;
+        if (urlToUse.startsWith('/')) {
+            fullUrl = window.location.origin + urlToUse;
         }
 
-        let parts = tableURL.split('/');
+        let parts = urlToUse.split('/');
         const baseName = parts[parts.length - 1]?.split('?')[0] || 'dataset';
         const tableName = getUniqueTableName(baseName.replace(/\.[^.]+$/, ''), existingNames);
 
@@ -723,28 +834,48 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
             .then(content => {
                 let table: undefined | DictTable = undefined;
                 try {
+                    // Try parsing as JSON first
                     let jsonContent = JSON.parse(content);
                     if (!Array.isArray(jsonContent)) {
                         throw new Error('JSON content must be an array of objects.');
                     }
                     table = createTableFromFromObjectArray(tableName, jsonContent, true);
-                } catch (error) {
-                    table = createTableFromText(tableName, content);
+                } catch (jsonError) {
+                    // If JSON parsing fails, try JSONL (JSON Lines) format
+                    try {
+                        const lines = content.trim().split('\n').filter(line => line.trim() !== '');
+                        const jsonlObjects = lines.map(line => {
+                            try {
+                                return JSON.parse(line);
+                            } catch (e) {
+                                throw new Error(`Invalid JSONL line: ${line.substring(0, 50)}...`);
+                            }
+                        });
+                        if (jsonlObjects.length > 0 && typeof jsonlObjects[0] === 'object' && jsonlObjects[0] !== null) {
+                            table = createTableFromFromObjectArray(tableName, jsonlObjects, true);
+                        } else {
+                            throw new Error('JSONL must contain objects.');
+                        }
+                    } catch (jsonlError) {
+                        // If JSONL parsing fails, try CSV/TSV
+                        table = createTableFromText(tableName, content);
+                    }
                 }
 
                 if (table) {
                     setUrlPreviewTables([table]);
                 } else {
-                    setUrlPreviewError('Unable to parse data from the provided URL.');
+                    setUrlPreviewError('Unable to parse data from the provided URL. Please ensure the URL points to CSV, JSON, or JSONL data.');
                 }
             })
             .catch((err) => {
-                setUrlPreviewError(`Failed to fetch data: ${err.message}`);
+                setUrlPreviewError(`Failed to fetch data: ${err.message}. Please ensure the URL points to CSV, JSON, or JSONL data.`);
             })
             .finally(() => {
                 setUrlPreviewLoading(false);
             });
     };
+
 
     // URL tab load handlers
     const handleURLLoadSingleTable = (): void => {
@@ -806,78 +937,27 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     };
 
     // URL validation - allow common data file extensions and API endpoints
-    const hasValidUrl = tableURL.trim() !== '' && (
-        tableURL.startsWith('http://') || tableURL.startsWith('https://') || tableURL.startsWith('/')
+    const hasValidUrl = (tableURL || '').trim() !== '' && (
+        (tableURL || '').startsWith('http://') || (tableURL || '').startsWith('https://') || (tableURL || '').startsWith('/')
     );
     const hasMultipleFileTables = (filePreviewTables?.length || 0) > 1;
     const hasMultipleUrlTables = (urlPreviewTables?.length || 0) > 1;
     const showFilePreview = filePreviewLoading || !!filePreviewError || (filePreviewTables && filePreviewTables.length > 0);
     const showUrlPreview = urlPreviewLoading || !!urlPreviewError || (urlPreviewTables && urlPreviewTables.length > 0);
-    const hasPasteContent = pasteContent.trim() !== '';
-
-    // Data source configurations for the menu
-    const regularDataSources = [
-        { 
-            value: 'explore' as UploadTabType, 
-            title: 'Sample Datasets', 
-            description: 'Explore and load curated example datasets',
-            icon: <ExploreIcon />, 
-            disabled: false,
-            disabledReason: undefined
-        },
-        { 
-            value: 'upload' as UploadTabType, 
-            title: 'Upload File', 
-            description: 'Upload local files (CSV, TSV, JSON, Excel)',
-            icon: <UploadFileIcon />, 
-            disabled: false,
-            disabledReason: undefined
-        },
-        { 
-            value: 'url' as UploadTabType, 
-            title: 'Load from URL', 
-            description: 'Load data from a URL with optional auto-refresh',
-            icon: <LinkIcon />, 
-            disabled: false,
-            disabledReason: undefined
-        },
-        { 
-            value: 'paste' as UploadTabType, 
-            title: 'Paste Data', 
-            description: 'Paste tabular data directly from clipboard',
-            icon: <ContentPasteIcon />, 
-            disabled: false,
-            disabledReason: undefined
-        },
-        { 
-            value: 'extract' as UploadTabType, 
-            title: 'Extract from Documents', 
-            description: 'Extract tables from images, PDFs, or documents using AI',
-            icon: <ImageSearchIcon />, 
-            disabled: false,
-            disabledReason: undefined
-        },
-    ];
-
-
-    const databaseDataSources = [
-        { 
-            value: 'database' as UploadTabType, 
-            title: 'Database', 
-            description: 'Connect to databases or data services',
-            icon: <StorageIcon />, 
-            disabled: serverConfig.DISABLE_DATABASE,
-            disabledReason: 'Database connection is disabled in this environment'
-        },
-    ];
-
-    // Combined config for finding tab titles
-    const dataSourceConfig = [...regularDataSources, ...databaseDataSources];
+    const hasPasteContent = (pasteContent || '').trim() !== '';
 
     // Get current tab title for header
     const getCurrentTabTitle = () => {
-        const tab = dataSourceConfig.find(t => t.value === activeTab);
-        return tab?.title || 'Add Data';
+        const tabTitles: Record<UploadTabType, string> = {
+            'menu': 'Load Data',
+            'explore': 'Sample Datasets',
+            'upload': 'Upload File',
+            'paste': 'Paste Data',
+            'extract': 'Extract from Documents',
+            'url': 'Load from URL',
+            'database': 'Database',
+        };
+        return tabTitles[activeTab] || 'Add Data';
     };
 
     return (
@@ -941,81 +1021,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                 {/* Main Menu */}
                 <TabPanel value={activeTab} index="menu">
                     <Box sx={{ p: 2, boxSizing: 'border-box', width: '100%', height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                        <Box sx={{ 
-                            width: '100%',
-                            maxWidth: 860,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 2,
-                        }}>
-                            {/* Section hint */}
-                            <Typography 
-                                variant="body2" 
-                                color="text.secondary" 
-                                sx={{ 
-                                    textAlign: 'left',
-                                    my: 1,
-                                    opacity: 0.6,
-                                    fontSize: '0.75rem',
-                                    letterSpacing: '0.02em'
-                                }}
-                            >
-                                Local data
-                            </Typography>
-
-                            {/* Regular Data Sources Group */}
-                            <Box sx={{ 
-                                display: 'grid', 
-                                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                gap: 1.5,
-                            }}>
-                                {regularDataSources.map((source) => (
-                                    <DataSourceCard
-                                        key={source.value}
-                                        icon={source.icon}
-                                        title={source.title}
-                                        description={source.description}
-                                        onClick={() => setActiveTab(source.value)}
-                                        disabled={source.disabled}
-                                        disabledReason={source.disabledReason}
-                                    />
-                                ))}
-                            </Box>
-
-                            {/* Section hint */}
-                            <Typography 
-                                variant="body2" 
-                                color="text.secondary" 
-                                sx={{ 
-                                    textAlign: 'left',
-                                    my: 1,
-                                    opacity: 0.6,
-                                    fontSize: '0.75rem',
-                                    letterSpacing: '0.02em'
-                                }}
-                            >
-                                Or connect to a database
-                            </Typography>
-
-                            {/* Database Data Sources Group */}
-                            <Box sx={{ 
-                                display: 'grid', 
-                                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                                gap: 1.5,
-                            }}>
-                                {databaseDataSources.map((source) => (
-                                    <DataSourceCard
-                                        key={source.value}
-                                        icon={source.icon}
-                                        title={source.title}
-                                        description={source.description}
-                                        onClick={() => setActiveTab(source.value)}
-                                        disabled={source.disabled}
-                                        disabledReason={source.disabledReason}
-                                    />
-                                ))}
-                            </Box>
-                        </Box>
+                        <DataLoadMenu 
+                            onSelectTab={(tab) => setActiveTab(tab)}
+                            serverConfig={serverConfig}
+                            variant="dialog"
+                        />
                     </Box>
                 </TabPanel>
 
@@ -1088,13 +1098,11 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
                         {showFilePreview && (
                             <Box sx={{ width: '90%', alignSelf: 'center' }}>
-                                <PreviewPanel
-                                    title="Preview"
+                                <MultiTablePreview
                                     loading={filePreviewLoading}
                                     error={filePreviewError}
                                     tables={filePreviewTables}
                                     emptyLabel="Select a file to preview."
-                                    meta={filePreviewTables && filePreviewTables.length > 0 ? `${filePreviewTables.length} table${filePreviewTables.length > 1 ? 's' : ''} previewed${hasMultipleFileTables ? ' • Multiple sheets detected' : ''}` : undefined}
                                     onRemoveTable={handleRemoveFilePreviewTable}
                                     activeIndex={filePreviewActiveIndex}
                                     onActiveIndexChange={setFilePreviewActiveIndex}
@@ -1103,23 +1111,21 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         )}
 
                         {filePreviewTables && filePreviewTables.length > 0 && (
-                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, alignItems: 'center' }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, alignItems: 'center' }}>
                                 <Button
                                     variant="outlined"
-                                    size="small"
                                     onClick={handleFileLoadSingleTable}
                                     disabled={filePreviewLoading}
-                                    sx={{ textTransform: 'none' }}
+                                    sx={{ textTransform: 'none', width: 240 }}
                                 >
                                     Load Table
                                 </Button>
                                 {hasMultipleFileTables && (
                                     <Button
                                         variant="contained"
-                                        size="small"
                                         onClick={handleFileLoadAllTables}
                                         disabled={filePreviewLoading}
-                                        sx={{ textTransform: 'none' }}
+                                        sx={{ textTransform: 'none', width: 240 }}
                                     >
                                         Load All Tables
                                     </Button>
@@ -1142,69 +1148,45 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                     }}>
                         <Box sx={{ width: '100%', maxWidth: showUrlPreview ? '80%' : 760, alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: 2 }}>
                             {/* URL Input */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <TextField
-                                    fullWidth
-                                    placeholder="Enter URL: https://example.com/data.json or /api/data"
-                                    value={tableURL}
-                                    onChange={(e) => setTableURL(e.target.value.trim())}
-                                    error={tableURL !== "" && !hasValidUrl}
-                                    helperText={tableURL !== "" && !hasValidUrl ? "Enter a valid URL starting with http://, https://, or /" : undefined}
-                                    size="small"
-                                    sx={{ 
-                                        flex: 1,
-                                        '& .MuiInputBase-input': {
-                                            fontSize: '0.875rem',
-                                        },
-                                        '& .MuiInputBase-input::placeholder': {
-                                            fontSize: '0.875rem',
-                                        },
-                                    }}
-                                />
-                                <Button
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={handleURLPreview}
-                                    disabled={!hasValidUrl || urlPreviewLoading}
-                                    sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
-                                >
-                                    Preview
-                                </Button>
-                            </Box>
-
-                            {/* Example APIs */}
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                                <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
-                                    Try examples:
-                                </Typography>
-                                {[
-                                    { label: 'USGS Earthquakes', url: '/api/demo-stream/earthquakes?timeframe=day&min_magnitude=2.5', description: 'Recent earthquakes worldwide' },
-                                    { label: 'US Weather', url: '/api/demo-stream/weather', description: 'Current weather for major US cities' },
-                                    { label: 'Stock Prices (yahoo finance)', url: '/api/demo-stream/yfinance?symbols=AAPL,MSFT,GOOGL,NVDA', description: 'Stock prices with historical + intraday data' },
-                                ].map((example) => (
-                                    <Chip
-                                        key={example.label}
-                                        label={example.label}
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <TextField
+                                        fullWidth
+                                        placeholder="Enter URL: https://example.com/data.json or /api/data"
+                                        value={tableURL || ''}
+                                        onChange={(e) => setTableURL((e.target.value || '').trim())}
+                                        inputRef={urlInputRef}
+                                        error={tableURL !== "" && !hasValidUrl}
+                                        helperText={tableURL !== "" && !hasValidUrl ? "Enter a valid URL starting with http://, https://, or /" : undefined}
                                         size="small"
-                                        variant="outlined"
-                                        onClick={() => setTableURL(example.url)}
-                                        title={example.description}
                                         sx={{ 
-                                            cursor: 'pointer',
-                                            fontSize: '0.75rem',
-                                            height: 24,
-                                            '&:hover': {
-                                                backgroundColor: alpha(theme.palette.primary.main, 0.08),
-                                                borderColor: 'primary.main',
-                                            }
+                                            flex: 1,
+                                            '& .MuiInputBase-input': {
+                                                fontSize: '0.875rem',
+                                            },
+                                            '& .MuiInputBase-input::placeholder': {
+                                                fontSize: '0.875rem',
+                                            },
                                         }}
                                     />
-                                ))}
+                                    <Button
+                                        variant="outlined"
+                                        size="small"
+                                        onClick={() => handleURLPreview(tableURL || '')}
+                                        disabled={!hasValidUrl || urlPreviewLoading}
+                                        sx={{ textTransform: 'none', whiteSpace: 'nowrap' }}
+                                    >
+                                        Preview
+                                    </Button>
+                                </Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', ml: 0.5 }}>
+                                    The URL must point to data in CSV, JSON, or JSONL format
+                                </Typography>
                             </Box>
                             
                             {/* Watch/Auto-refresh options - always visible */}
                             <Paper variant="outlined" sx={{ p: 2, borderRadius: 1 }}>
-                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                                <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'center', height: 24 }}>
                                     <FormControlLabel
                                         control={
                                             <Switch
@@ -1214,63 +1196,114 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                             />
                                         }
                                         label={
-                                            <Box sx={{ height: 24, display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'center' }}>
-                                                <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
-                                                    Watch Mode:
-                                                </Typography>
-                                                
-                                                {urlAutoRefresh ? (
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, }}>
-                                                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
-                                                            refresh interval
-                                                        </Typography>
-                                                        {[
-                                                            { seconds: 5, label: '5s' },
-                                                            { seconds: 15, label: '15s' },
-                                                            { seconds: 30, label: '30s' },
-                                                            { seconds: 60, label: '1m' },
-                                                            { seconds: 300, label: '5m' },
-                                                            { seconds: 600, label: '10m' },
-                                                            { seconds: 1800, label: '30m' },
-                                                            { seconds: 3600, label: '1h' },
-                                                        ].map((opt) => (
-                                                            <Chip
-                                                                key={opt.seconds}
-                                                                label={opt.label}
-                                                                size="small"
-                                                                variant={urlRefreshInterval === opt.seconds ? 'filled' : 'outlined'}
-                                                                color={urlRefreshInterval === opt.seconds ? 'primary' : 'default'}
-                                                                onClick={() => setUrlRefreshInterval(opt.seconds)}
-                                                                sx={{ 
-                                                                    cursor: 'pointer', 
-                                                                    fontSize: '0.7rem',
-                                                                    height: 24,
-                                                                }}
-                                                            />
-                                                        ))}
-                                                    </Box>
-                                                ) : <Typography sx={{ ml: 'auto' }} component="span" variant="caption" color="text.secondary">
-                                                    automatically check and refresh data from the URL at regular intervals
-                                                </Typography>}
-                                            </Box>
+                                            <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
+                                                Watch Mode
+                                            </Typography>
                                         }
-                                        sx={{ alignItems: 'flex-start', ml: 0 }}
                                     />
-                                    
+                                    {urlAutoRefresh ? (
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, }}>
+                                            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                                                check data updates every
+                                            </Typography>
+                                            {[
+                                                { seconds: 5, label: '5s' },
+                                                { seconds: 15, label: '15s' },
+                                                { seconds: 30, label: '30s' },
+                                                { seconds: 60, label: '1m' },
+                                                { seconds: 300, label: '5m' },
+                                                { seconds: 600, label: '10m' },
+                                                { seconds: 1800, label: '30m' },
+                                                { seconds: 3600, label: '1h' },
+                                                { seconds: 86400, label: '24h' },
+                                            ].map((opt) => (
+                                                <Chip
+                                                    key={opt.seconds}
+                                                    label={opt.label}
+                                                    size="small"
+                                                    variant={urlRefreshInterval === opt.seconds ? 'filled' : 'outlined'}
+                                                    color={urlRefreshInterval === opt.seconds ? 'primary' : 'default'}
+                                                    onClick={() => setUrlRefreshInterval(opt.seconds)}
+                                                    sx={{ 
+                                                        cursor: 'pointer', 
+                                                        fontSize: '0.7rem',
+                                                        height: 24,
+                                                    }}
+                                                />
+                                            ))}
+                                        </Box>
+                                    ) : <Typography component="span" variant="caption" color="text.secondary">
+                                        automatically check and refresh data from the URL at regular intervals
+                                    </Typography>}
                                     
                                 </Box>
                             </Paper>
+
+                            {/* Example APIs - Compact List */}
+                            {(!urlPreviewTables || urlPreviewTables.length === 0) && !urlPreviewLoading && (
+                                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5 }}>
+                                        Try examples:
+                                    </Typography>
+                                    <Box component="ul" sx={{ 
+                                        listStyle: 'none', 
+                                        padding: 0, 
+                                        margin: 0,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: 0.25,
+                                    }}>
+                                        {exampleUrls.map((example) => (
+                                            <Box
+                                                component="li"
+                                                key={example.url}
+                                                onClick={() => {
+                                                    console.log('example', example);
+                                                    if (example.url) {
+                                                        
+                                                        setTableURL(example.url);
+                                                        setUrlAutoRefresh(true);
+                                                        setUrlRefreshInterval(example.refreshSeconds || 60);
+                                                        handleURLPreview(example.url);
+                                                    }
+                                                }}
+                                                sx={{
+                                                    cursor: 'pointer',
+                                                    '&::before': {
+                                                        content: '"• "',
+                                                        color: 'text.secondary',
+                                                        marginRight: 0.5,
+                                                    }
+                                                }}
+                                            >
+                                                <Typography 
+                                                    component="span"
+                                                    variant="caption" 
+                                                    sx={{ 
+                                                        fontSize: '0.75rem',
+                                                        color: 'primary.main',
+                                                        textDecoration: 'none',
+                                                        '&:hover': {
+                                                            textDecoration: 'underline',
+                                                        }
+                                                    }}
+                                                >
+                                                    {example.label}
+                                                </Typography>
+                                            </Box>
+                                        ))}
+                                    </Box>
+                                </Box>
+                            )}
                         </Box>
 
                         {showUrlPreview && (
                             <Box sx={{ width: '90%', alignSelf: 'center' }}>
-                                <PreviewPanel
-                                    title="Preview"
+                                <MultiTablePreview
                                     loading={urlPreviewLoading}
                                     error={urlPreviewError}
                                     tables={urlPreviewTables}
                                     emptyLabel="Enter a URL and click Preview to see data."
-                                    meta={urlPreviewTables && urlPreviewTables.length > 0 ? `${urlPreviewTables.length} table${urlPreviewTables.length > 1 ? 's' : ''} previewed` : undefined}
                                     onRemoveTable={handleRemoveUrlPreviewTable}
                                     activeIndex={urlPreviewActiveIndex}
                                     onActiveIndexChange={setUrlPreviewActiveIndex}
@@ -1279,7 +1312,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                         )}
 
                         {urlPreviewTables && urlPreviewTables.length > 0 && (
-                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, alignItems: 'center' }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, alignItems: 'center' }}>
                                 {urlAutoRefresh && (
                                     <Typography variant="caption" color="success.main" sx={{ mr: 1 }}>
                                         <StreamIcon sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.5 }} />
@@ -1287,11 +1320,10 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                     </Typography>
                                 )}
                                 <Button
-                                    variant="outlined"
-                                    size="small"
+                                    variant="contained"
                                     onClick={handleURLLoadSingleTable}
                                     disabled={urlPreviewLoading}
-                                    sx={{ textTransform: 'none' }}
+                                    sx={{ textTransform: 'none', width: 240 }}
                                 >
                                     Load Table
                                 </Button>
@@ -1392,7 +1424,7 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                             <Button
                                 variant="contained"
                                 onClick={handlePasteSubmit}
-                                disabled={pasteContent.trim() === '' || isOverSizeLimit}
+                                disabled={(pasteContent || '').trim() === '' || isOverSizeLimit}
                                 sx={{ textTransform: 'none' }}
                             >
                                 Upload Data

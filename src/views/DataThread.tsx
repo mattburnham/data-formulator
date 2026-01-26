@@ -76,6 +76,7 @@ import { RefreshDataDialog } from './RefreshDataDialog';
 import { getUrls } from '../app/utils';
 import { AppDispatch } from '../app/store';
 import StopIcon from '@mui/icons-material/Stop';
+import { useDataRefresh } from '../app/useDataRefresh';
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
     <Box sx={{ 
@@ -129,7 +130,8 @@ const StreamingSettingsPopup = memo<{
     onClose: () => void;
     table: DictTable;
     onUpdateSettings: (autoRefresh: boolean, refreshIntervalSeconds?: number) => void;
-}>(({ open, anchorEl, onClose, table, onUpdateSettings }) => {
+    onRefreshNow?: () => void;
+}>(({ open, anchorEl, onClose, table, onUpdateSettings, onRefreshNow }) => {
     const [refreshInterval, setRefreshInterval] = useState<number>(
         table.source?.refreshIntervalSeconds || 60
     );
@@ -137,6 +139,7 @@ const StreamingSettingsPopup = memo<{
         table.source?.autoRefresh || false
     );
     const [selectMenuOpen, setSelectMenuOpen] = useState<boolean>(false);
+    const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
     useEffect(() => {
         if (open) {
@@ -157,6 +160,17 @@ const StreamingSettingsPopup = memo<{
         setRefreshInterval(interval);
         if (autoRefresh) {
             onUpdateSettings(true, interval);
+        }
+    };
+
+    const handleRefreshNow = async () => {
+        if (onRefreshNow && !isRefreshing) {
+            setIsRefreshing(true);
+            try {
+                await onRefreshNow();
+            } finally {
+                setIsRefreshing(false);
+            }
         }
     };
 
@@ -196,56 +210,76 @@ const StreamingSettingsPopup = memo<{
                         borderColor: 'divider'
                     }}
                 >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'nowrap' }}>
-                        <FormControlLabel
-                            control={
-                                <Switch
-                                    checked={autoRefresh}
-                                    onChange={(e) => handleAutoRefreshChange(e.target.checked)}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'nowrap' }}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={autoRefresh}
+                                        onChange={(e) => handleAutoRefreshChange(e.target.checked)}
+                                        size="small"
+                                    />
+                                }
+                                label={
+                                    <Typography variant="body2" sx={{ fontSize: 11 }}>
+                                        Watch for updates
+                                    </Typography>
+                                }
+                                sx={{ mr: 0 }}
+                            />
+                            {autoRefresh && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 100 }}>
+                                    <Typography variant="body2" sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                        every
+                                    </Typography>
+                                    <TextField
+                                        select
+                                        size="small"
+                                        value={refreshInterval}
+                                        onChange={(e) => handleIntervalChange(Number(e.target.value))}
+                                        slotProps={{
+                                            select: {
+                                                open: selectMenuOpen,
+                                                onOpen: () => setSelectMenuOpen(true),
+                                                onClose: () => setSelectMenuOpen(false)
+                                            }
+                                        }}
+                                        sx={{ 
+                                            minWidth: 70,
+                                            '& .MuiInputBase-root': { fontSize: 11, height: 28 },
+                                            '& .MuiSelect-select': { py: 0.5 }
+                                        }}
+                                    >
+                                        <MenuItem value={1}>1s</MenuItem>
+                                        <MenuItem value={10}>10s</MenuItem>
+                                        <MenuItem value={30}>30s</MenuItem>
+                                        <MenuItem value={60}>1m</MenuItem>
+                                        <MenuItem value={300}>5m</MenuItem>
+                                        <MenuItem value={600}>10m</MenuItem>
+                                        <MenuItem value={1800}>30m</MenuItem>
+                                        <MenuItem value={3600}>1h</MenuItem>
+                                        <MenuItem value={86400}>24h</MenuItem>
+                                    </TextField>
+                                </Box>
+                            )}
+                            {onRefreshNow && (
+                                <Button
+                                    variant="outlined"
                                     size="small"
-                                />
-                            }
-                            label={
-                                <Typography variant="body2" sx={{ fontSize: 11 }}>
-                                    Watch for updates
-                                </Typography>
-                            }
-                            sx={{ mr: 0 }}
-                        />
-                        {autoRefresh && (
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 100 }}>
-                                <Typography variant="body2" sx={{ fontSize: 11, color: 'text.secondary' }}>
-                                    every
-                                </Typography>
-                                <TextField
-                                    select
-                                    size="small"
-                                    value={refreshInterval}
-                                    onChange={(e) => handleIntervalChange(Number(e.target.value))}
-                                    slotProps={{
-                                        select: {
-                                            open: selectMenuOpen,
-                                            onOpen: () => setSelectMenuOpen(true),
-                                            onClose: () => setSelectMenuOpen(false)
-                                        }
-                                    }}
-                                    sx={{ 
-                                        minWidth: 70,
-                                        '& .MuiInputBase-root': { fontSize: 11, height: 28 },
-                                        '& .MuiSelect-select': { py: 0.5 }
+                                    onClick={handleRefreshNow}
+                                    disabled={isRefreshing}
+                                    startIcon={isRefreshing ? <CircularProgress size={14} /> : <RefreshIcon sx={{ fontSize: 14 }} />}
+                                    sx={{
+                                        fontSize: 11,
+                                        textTransform: 'none',
+                                        height: 28,
+                                        alignSelf: 'flex-start'
                                     }}
                                 >
-                                    <MenuItem value={1}>1s</MenuItem>
-                                    <MenuItem value={10}>10s</MenuItem>
-                                    <MenuItem value={30}>30s</MenuItem>
-                                    <MenuItem value={60}>1m</MenuItem>
-                                    <MenuItem value={300}>5m</MenuItem>
-                                    <MenuItem value={600}>10m</MenuItem>
-                                    <MenuItem value={1800}>30m</MenuItem>
-                                    <MenuItem value={3600}>1h</MenuItem>
-                                </TextField>
-                            </Box>
-                        )}
+                                    Refresh now
+                                </Button>
+                            )}
+                        </Box>
                     </Box>
                 </Paper>
             </ClickAwayListener>
@@ -668,6 +702,7 @@ let SingleThreadGroupView: FC<{
 }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    const { manualRefresh } = useDataRefresh();
 
     let leafTableIds = leafTables.map(lt => lt.id);
     let parentTableId = leafTables[0].derive?.trigger.tableId || undefined;
@@ -1324,6 +1359,7 @@ let SingleThreadGroupView: FC<{
                         onClose={handleCloseStreamingSettingsPopup}
                         table={selectedTableForStreamingSettings}
                         onUpdateSettings={handleUpdateStreamingSettings}
+                        onRefreshNow={() => manualRefresh(selectedTableForStreamingSettings.id)}
                     />
                 )}
             </Box>
@@ -1480,6 +1516,7 @@ let SingleThreadGroupView: FC<{
                 onClose={handleCloseStreamingSettingsPopup}
                 table={selectedTableForStreamingSettings}
                 onUpdateSettings={handleUpdateStreamingSettings}
+                onRefreshNow={() => manualRefresh(selectedTableForStreamingSettings.id)}
             />
         )}
     </Box>

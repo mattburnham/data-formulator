@@ -2,14 +2,15 @@
 // Licensed under the MIT License.
 
 import * as React from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
-import { Button, Card, Paper, Chip } from '@mui/material';
+import { Button, Chip } from '@mui/material';
 import StreamIcon from '@mui/icons-material/Stream';
-import { CustomReactTable } from './ReactTable';
 import { createTableFromFromObjectArray } from '../data/utils';
+import { MultiTablePreview } from './MultiTablePreview';
+import { DictTable } from '../components/ComponentType';
 
 // Update the interface to support multiple tables per dataset
 export interface DatasetMetadata {
@@ -33,16 +34,21 @@ export interface DatasetSelectionViewProps {
     hideRowNum?: boolean;
 }
 
-
 export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = function DatasetSelectionView({ datasets, handleSelectDataset, hideRowNum  }) {
 
-    const [selectedDatasetName, setSelectedDatasetName] = React.useState<string | undefined>(undefined);
+    const [selectedDatasetName, setSelectedDatasetName] = useState<string | undefined>(undefined);
+    const [tableActiveIndex, setTableActiveIndex] = useState<number>(0);
 
     useEffect(() => {
         if (datasets.length > 0) {
             setSelectedDatasetName(datasets[0].name);
         }
     }, [datasets]);
+
+    // Reset table active index when dataset changes
+    useEffect(() => {
+        setTableActiveIndex(0);
+    }, [selectedDatasetName]);
 
     const handleDatasetSelect = (index: number) => {
         setSelectedDatasetName(datasets[index].name);
@@ -58,6 +64,21 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
         }
         datasetTitles.push(title);
     }
+
+    // Convert dataset tables to DictTable objects for the preview
+    const selectedDataset = datasets.find(d => d.name === selectedDatasetName);
+    const previewTables: DictTable[] = useMemo(() => {
+        if (!selectedDataset) return [];
+        return selectedDataset.tables.map((table) => {
+            const dictTable = createTableFromFromObjectArray(table.table_name, table.sample, true);
+            // Use the table name from URL as displayId for better labeling
+            const displayName = table.url.split("/").pop()?.split(".")[0]?.split("?")[0] || table.table_name;
+            return {
+                ...dictTable,
+                displayId: displayName,
+            };
+        });
+    }, [selectedDataset]);
 
     return (
         <Box sx={{ bgcolor: 'background.paper', display: 'flex', height: '100%', borderRadius: 2, overflow: 'hidden' }} >
@@ -119,74 +140,35 @@ export const DatasetSelectionView: React.FC<DatasetSelectionViewProps> = functio
             {/* Content area */}
             <Box sx={{ flex: 1, overflow: 'hidden', minWidth: 0, minHeight: 0, height: '100%', position: 'relative' }}>
                 <Box sx={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', p: 2, minWidth: 0, overscrollBehavior: 'contain' }}>
-                    {datasets.map((dataset, i) => {
-                        if (dataset.name !== selectedDatasetName) return null;
-
-                        let tableComponents = dataset.tables.map((table, j) => {
-                            let t = createTableFromFromObjectArray(table.table_name, table.sample, true);
-                            let maxDisplayRows = dataset.tables.length > 1 ? 5 : 9;
-                            if (t.rows.length < maxDisplayRows) {
-                                maxDisplayRows = t.rows.length - 1;
-                            }
-                            let sampleRows = [
-                                ...t.rows.slice(0,maxDisplayRows), 
-                                Object.fromEntries(t.names.map(n => [n, "..."]))
-                            ];
-                            let colDefs = t.names.map(name => { return {
-                                id: name, label: name, minWidth: 60, align: undefined, format: (v: any) => v,
-                            }})
-
-                            return (
-                                <Box key={j}>
-                                    <Typography variant="subtitle2" sx={{ mb: 1, fontSize: 12}} color="text.secondary">
-                                        {table.url.split("/").pop()?.split(".")[0]}  ({Object.keys(t.rows[0]).length} columns{hideRowNum ? "" : ` ⨉ ${t.rows.length} rows`})
-                                    </Typography>
-                                    <Box sx={{ maxWidth: '100%', overflowX: 'auto', display: 'flex', flexDirection: 'column', mb: 1 }}>
-                                        <Card variant="outlined" sx={{
-                                            width: 800, minWidth: 'fit-content', padding: "0px"}}>
-                                            <CustomReactTable rows={sampleRows} columnDefs={colDefs} rowsPerPageNum={-1} compact={false} />
-                                        </Card>
-                                    </Box>
-                                </Box>
-                            )
-                        });
-                        
-                        // Format refresh interval for display
-                        const formatRefreshInterval = (seconds: number) => {
-                            if (seconds < 60) return `${seconds}s`;
-                            if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-                            return `${Math.floor(seconds / 3600)}h`;
-                        };
-                        
-                        return (
-                            <Box key={i}>
-                                <Box sx={{mb: 1, gap: 1, maxWidth: 800, display: "flex", alignItems: "center", flexWrap: "wrap"}}>
-                                    <Typography sx={{fontSize: 12, flex: 1, minWidth: 200}}>
-                                        {dataset.description} <Typography variant="caption" sx={{color: "primary.light", fontSize: 10, mx: 0.5}}>[from {dataset.source}]</Typography>
-                                    </Typography>
-                                    {dataset.live && dataset.refreshIntervalSeconds && (
-                                        <Chip 
-                                            icon={<StreamIcon sx={{ fontSize: 14 }} />}
-                                            label={`Auto-refresh: ${formatRefreshInterval(dataset.refreshIntervalSeconds)}`}
-                                            size="small"
-                                            color="success"
-                                            variant="outlined"
-                                            sx={{ fontSize: 10, height: 22 }}
-                                        />
-                                    )}
-                                    <Box sx={{marginLeft: "auto", flexShrink: 0}} >
-                                        <Button size="small" variant="contained" 
-                                                onClick={(event: React.MouseEvent<HTMLElement>) => {
-                                                    handleSelectDataset(dataset);
-                                                }}>
-                                            {dataset.live ? 'load live data' : 'load dataset'}
-                                        </Button>
-                                    </Box>
-                                </Box>
-                                {tableComponents}
+                    {selectedDataset && (
+                        <Box>
+                            <Box sx={{mb: 1, gap: 1, maxWidth: 800, display: "flex", alignItems: "center", flexWrap: "wrap"}}>
+                                <Typography sx={{fontSize: 12, flex: 1, minWidth: 200}}>
+                                    {selectedDataset.description} <Typography variant="caption" sx={{color: "primary.light", fontSize: 10, mx: 0.5}}>[from {selectedDataset.source}]</Typography>
+                                </Typography>
                             </Box>
-                        );
-                    })}
+                            <Box sx={{ maxWidth: 800 }}>
+                                <MultiTablePreview
+                                    tables={previewTables}
+                                    emptyLabel="No tables available."
+                                    activeIndex={tableActiveIndex}
+                                    onActiveIndexChange={setTableActiveIndex}
+                                    maxHeight={280}
+                                    maxRows={12}
+                                    compact={false}
+                                    showPreviewLabel={false}
+                                />
+                            </Box>
+                            <Box sx={{display: 'flex', justifyContent: 'center', mt: 2}} >
+                                <Button variant="contained" sx={{ width: 240 }}
+                                        onClick={(event: React.MouseEvent<HTMLElement>) => {
+                                            handleSelectDataset(selectedDataset);
+                                        }}>
+                                    load dataset
+                                </Button>
+                            </Box>
+                        </Box>
+                    )}
                 </Box>
             </Box>
         </Box>

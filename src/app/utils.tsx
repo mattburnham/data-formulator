@@ -688,7 +688,17 @@ export const assembleVegaChart = (
         if (temporalKeys.length > 0) {
             values = values.map((r: any) => { 
                 for (let temporalKey of temporalKeys) {
-                    r[temporalKey] = String(r[temporalKey]);
+                    const val = r[temporalKey];
+                    // Convert numeric timestamps to ISO date strings for Vega-Lite compatibility
+                    if (typeof val === 'number') {
+                        // Detect if timestamp is in seconds (10 digits) or milliseconds (13 digits)
+                        const timestamp = val < 1e12 ? val * 1000 : val;
+                        r[temporalKey] = new Date(timestamp).toISOString();
+                    } else if (val instanceof Date) {
+                        r[temporalKey] = val.toISOString();
+                    } else {
+                        r[temporalKey] = String(val);
+                    }
                 }
                 return r;
             })

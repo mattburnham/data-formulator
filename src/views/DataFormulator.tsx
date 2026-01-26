@@ -18,7 +18,6 @@ import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 
 import {
-
     Typography,
     Box,
     Tooltip,
@@ -27,13 +26,6 @@ import {
     useTheme,
     alpha,
 } from '@mui/material';
-import {
-    FolderOpen as FolderOpenIcon,
-    ContentPaste as ContentPasteIcon,
-    Category as CategoryIcon,
-    CloudQueue as CloudQueueIcon,
-    AutoFixNormal as AutoFixNormalIcon,
-} from '@mui/icons-material';
 
 import { FreeDataViewFC } from './DataView';
 import { VisualizationViewFC } from './VisualizationView';
@@ -48,7 +40,7 @@ import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
 import { getUrls } from '../app/utils';
-import { UnifiedDataUploadDialog, UploadTabType } from './UnifiedDataUploadDialog';
+import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu } from './UnifiedDataUploadDialog';
 import { ReportView } from './ReportView';
 import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
 import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
@@ -59,6 +51,7 @@ export const DataFormulatorFC = ({ }) => {
     const models = useSelector((state: DataFormulatorState) => state.models);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const theme = useTheme();
 
     const dispatch = useDispatch();
@@ -286,28 +279,11 @@ export const DataFormulatorFC = ({ }) => {
                 Explore data with visualizations, powered by AI agents. 
             </Typography>
             <Box sx={{my: 4}}>
-                <Typography sx={{ 
-                    maxWidth: 1100, fontSize: 32, color: alpha(theme.palette.text.primary, 0.8), 
-                    lineHeight: 2,
-                    '& span': { 
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.02em',
-                        textDecoration: 'underline', textUnderlineOffset: '0.2em', 
-                        cursor: 'pointer', color: theme.palette.primary.main,
-                        '&:hover': {
-                            color: theme.palette.primary.dark,
-                        }
-                    }}}>
-                    To begin, 
-                    {' '}<span onClick={() => openUploadDialog('extract')}>extract</span>{' '}
-                    data from images or text documents, load {' '}
-                    {' '}<span onClick={() => openUploadDialog('explore')}>examples</span>{' '}, 
-                    upload data from{' '}
-                    {' '}<span onClick={() => openUploadDialog('paste')}>clipboard</span> or {' '}
-                    {' '}<span onClick={() => openUploadDialog('upload')}>files</span>{' '}, 
-                    or connect to a{' '}
-                    {' '}<span onClick={() => openUploadDialog('database')}>database</span>{' '}.
-                </Typography>
+                <DataLoadMenu 
+                    onSelectTab={(tab) => openUploadDialog(tab)}
+                    serverConfig={serverConfig}
+                    variant="page"
+                />
                 <UnifiedDataUploadDialog 
                     open={uploadDialogOpen}
                     onClose={() => setUploadDialogOpen(false)}

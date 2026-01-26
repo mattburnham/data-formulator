@@ -182,6 +182,55 @@ let getUnrefedDerivedTableIds = (state: DataFormulatorState) => {
     let tableWithDescendants = state.tables.filter(table => state.tables.some(t => t.derive?.trigger.tableId == table.id)).map(t => t.id);
 
     return state.tables.filter(table => table.derive && !tableWithDescendants.includes(table.id) && !chartRefedTables.includes(table.id)).map(t => t.id);
+}
+
+// Helper function to auto-populate latitude/longitude encodings for map charts
+let autoPopulateMapEncodings = (chart: Chart, table: DictTable | undefined, conceptShelfItems: FieldItem[]) => {
+    if (!table) return;
+    
+    // Patterns to match latitude/longitude column names
+    const latPatterns = ['latitude', 'lat'];
+    const lonPatterns = ['longitude', 'lon', 'lng', 'long'];
+    
+    // Find latitude column (exact match first, then partial match)
+    let latColumn = table.names.find(name => 
+        latPatterns.some(p => name.toLowerCase() === p)
+    );
+    if (!latColumn) {
+        latColumn = table.names.find(name => 
+            latPatterns.some(p => name.toLowerCase().includes(p))
+        );
+    }
+    
+    // Find longitude column (exact match first, then partial match)
+    let lonColumn = table.names.find(name => 
+        lonPatterns.some(p => name.toLowerCase() === p)
+    );
+    if (!lonColumn) {
+        lonColumn = table.names.find(name => 
+            lonPatterns.some(p => name.toLowerCase().includes(p))
+        );
+    }
+    
+    // Auto-populate latitude encoding if found and not already set
+    if (latColumn && chart.encodingMap.latitude?.fieldID == undefined) {
+        const latField = conceptShelfItems.find(f => 
+            f.name === latColumn && table.names.includes(f.name)
+        );
+        if (latField) {
+            chart.encodingMap.latitude = { fieldID: latField.id };
+        }
+    }
+    
+    // Auto-populate longitude encoding if found and not already set
+    if (lonColumn && chart.encodingMap.longitude?.fieldID == undefined) {
+        const lonField = conceptShelfItems.find(f => 
+            f.name === lonColumn && table.names.includes(f.name)
+        );
+        if (lonField) {
+            chart.encodingMap.longitude = { fieldID: lonField.id };
+        }
+    }
 } 
 
 let deleteChartsRoutine = (state: DataFormulatorState, chartIds: string[]) => {
@@ -603,6 +652,13 @@ export const dataFormulatorSlice = createSlice({
             let chartType = action.payload.chartType;
             let tableId = action.payload.tableId || state.tables[0].id;
             let freshChart = generateFreshChart(tableId, chartType, "user") as Chart;
+            
+            // Auto-populate latitude/longitude for map charts
+            if (chartType.toLowerCase().includes('map')) {
+                let table = state.tables.find(t => t.id === tableId);
+                autoPopulateMapEncodings(freshChart, table, state.conceptShelfItems);
+            }
+            
             state.charts = [ freshChart , ...state.charts];
             state.focusedTableId = tableId;
             state.focusedChartId = freshChart.id;
@@ -652,6 +708,14 @@ export const dataFormulatorSlice = createSlice({
             let chart = dfSelectors.getAllCharts(state).find(c => c.id == chartId);
             if (chart) {
                 chart = adaptChart(chart, getChartTemplate(chartType) as ChartTemplate);
+                
+                // Auto-populate latitude/longitude for map charts
+                if (chartType.toLowerCase().includes('map')) {
+                    let allCharts = dfSelectors.getAllCharts(state);
+                    let table = getDataTable(chart, state.tables, allCharts, state.conceptShelfItems);
+                    autoPopulateMapEncodings(chart, table, state.conceptShelfItems);
+                }
+                
                 dfSelectors.replaceChart(state, chart);
             }
         },

@@ -28,6 +28,7 @@ import chartIconCustomArea from '../assets/chart-icon-custom-area-min.png';
 import chartIconPie from '../assets/chart-icon-pie-min.png';
 import chartIconUSMap from '../assets/chart-icon-us-map-min.png';
 import chartIconPyramid from '../assets/chart-icon-pyramid-min.png';
+import chartIconWorldMap from '../assets/chart-icon-world-map-min.png';
 
 // Chart Icon Component using static imports
 const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) => {
@@ -385,7 +386,7 @@ const barCharts: ChartTemplate[] = [
 
 const mapCharts: ChartTemplate[] = [
     {
-        "chart": "US Map with Points",
+        "chart": "US Map",
         "icon": <ChartIcon src={chartIconUSMap} />,
         "template": {
             "width": 500,
@@ -411,6 +412,52 @@ const mapCharts: ChartTemplate[] = [
                 {
                     "projection": {
                         "type": "albersUsa"
+                    },
+                    "mark": "circle",
+                    "encoding": {
+                        "longitude": { },
+                        "latitude": { },
+                        "size": {},
+                        "color": {}
+                    }
+                }
+            ]
+        },
+        "channels": ["longitude", "latitude", "color", "size"],
+        "paths": {
+            "longitude": ["layer", 1, "encoding", "longitude"],
+            "latitude": ["layer", 1, "encoding", "latitude"],
+            "color": ["layer", 1, "encoding", "color"],
+            "size": ["layer", 1, "encoding", "size"]
+        }
+    },
+    {
+        "chart": "World Map",
+        "icon": <ChartIcon src={chartIconWorldMap} />,
+        "template": {
+            "width": 600,
+            "height": 350,
+            "layer": [
+                {
+                    "data": {
+                        "url": "https://vega.github.io/vega-lite/data/world-110m.json",
+                        "format": {
+                            "type": "topojson",
+                            "feature": "countries"
+                        }
+                    },
+                    "projection": {
+                        "type": "equalEarth"
+                    },
+                    "mark": {
+                        "type": "geoshape",
+                        "fill": "lightgray",
+                        "stroke": "white"
+                    }
+                },
+                {
+                    "projection": {
+                        "type": "equalEarth"
                     },
                     "mark": "circle",
                     "encoding": {

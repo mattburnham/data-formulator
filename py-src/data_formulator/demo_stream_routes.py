@@ -143,8 +143,8 @@ def get_iss():
     """
     global _iss_last_fetch
     
-    minutes = min(60, max(1, int(request.args.get('minutes', 30))))
-    limit = min(500, max(10, int(request.args.get('limit', 100))))
+    minutes = min(90, max(1, int(request.args.get('minutes', 30))))
+    limit = min(500, max(10, int(request.args.get('limit', 500))))
     
     now = datetime.utcnow()
     cutoff = now - timedelta(minutes=minutes)
@@ -181,32 +181,6 @@ def get_iss():
             rows = [position]
     
     return make_csv_response(rows)
-
-
-@demo_stream_bp.route('/iss/current', methods=['GET'])
-@limiter.limit(ISS_RATE_LIMIT)
-def get_iss_current():
-    """
-    Current ISS position only (single row).
-    Use /iss for trajectory tracking over time.
-    Recommended refresh: 5 seconds
-    """
-    try:
-        response = requests.get("http://api.open-notify.org/iss-now.json", timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        position = data.get("iss_position", {})
-        rows = [{
-            "timestamp": datetime.utcfromtimestamp(data.get("timestamp", 0)).isoformat() + "Z",
-            "latitude": float(position.get("latitude", 0)),
-            "longitude": float(position.get("longitude", 0)),
-            "fetched_at": datetime.utcnow().isoformat() + "Z"
-        }]
-        return make_csv_response(rows)
-    except Exception as e:
-        return Response(f"error,{str(e)}", mimetype='text/csv'), 500
-
 
 # ============================================================================
 # USGS Earthquakes - Accumulating dataset of seismic events
@@ -353,14 +327,26 @@ def get_earthquakes():
 # ============================================================================
 
 WEATHER_CITIES = [
-    {"name": "Seattle", "lat": 47.6062, "lon": -122.3321},
-    {"name": "New York", "lat": 40.7128, "lon": -74.0060},
-    {"name": "Los Angeles", "lat": 34.0522, "lon": -118.2437},
-    {"name": "Chicago", "lat": 41.8781, "lon": -87.6298},
-    {"name": "Miami", "lat": 25.7617, "lon": -80.1918},
-    {"name": "Denver", "lat": 39.7392, "lon": -104.9903},
-    {"name": "Boston", "lat": 42.3601, "lon": -71.0589},
-    {"name": "Phoenix", "lat": 33.4484, "lon": -112.0740},
+    {"name": "Seattle", "lat": 47.6062, "lon": -122.3321, "state": "WA"},
+    {"name": "New York", "lat": 40.7128, "lon": -74.0060, "state": "NY"},
+    {"name": "Los Angeles", "lat": 34.0522, "lon": -118.2437, "state": "CA"},
+    {"name": "Chicago", "lat": 41.8781, "lon": -87.6298, "state": "IL"},
+    {"name": "Miami", "lat": 25.7617, "lon": -80.1918, "state": "FL"},
+    {"name": "Denver", "lat": 39.7392, "lon": -104.9903, "state": "CO"},
+    {"name": "Boston", "lat": 42.3601, "lon": -71.0589, "state": "MA"},
+    {"name": "Phoenix", "lat": 33.4484, "lon": -112.0740, "state": "AZ"},
+    {"name": "Atlanta", "lat": 33.7490, "lon": -84.3880, "state": "GA"},
+    {"name": "Dallas", "lat": 32.7767, "lon": -96.7970, "state": "TX"},
+    {"name": "Houston", "lat": 29.7604, "lon": -95.3698, "state": "TX"},
+    {"name": "Portland", "lat": 45.5152, "lon": -122.6784, "state": "OR"},
+    {"name": "San Francisco", "lat": 37.7749, "lon": -122.4194, "state": "CA"},
+    {"name": "Las Vegas", "lat": 36.1699, "lon": -115.1398, "state": "NV"},
+    {"name": "Minneapolis", "lat": 44.9778, "lon": -93.2650, "state": "MN"},
+    {"name": "Detroit", "lat": 42.3314, "lon": -83.0458, "state": "MI"},
+    {"name": "Philadelphia", "lat": 39.9526, "lon": -75.1652, "state": "PA"},
+    {"name": "Washington", "lat": 38.9072, "lon": -77.0369, "state": "DC"},
+    {"name": "Nashville", "lat": 36.1627, "lon": -86.7816, "state": "TN"},
+    {"name": "New Orleans", "lat": 29.9511, "lon": -90.0715, "state": "LA"},
 ]
 
 @demo_stream_bp.route('/weather', methods=['GET'])
@@ -368,17 +354,63 @@ WEATHER_CITIES = [
 def get_weather():
     """
     Current weather for major US cities. Updates every 15 minutes.
+    
+    Query params:
+        - cities: Comma-separated list of city names (default: all cities)
+                  Example: cities=Seattle,New York,Los Angeles
+        - fields: Comma-separated list of fields to include (default: all)
+                  Available: temperature,humidity,wind,precipitation,pressure,cloud_cover
+    
     Recommended refresh: 300 seconds
     """
     fetched_at = datetime.utcnow().isoformat() + "Z"
     rows = []
     
-    for city in WEATHER_CITIES:
+    # Parse city filter
+    cities_param = request.args.get('cities', '').strip()
+    if cities_param:
+        city_names = [c.strip() for c in cities_param.split(',')]
+        cities_to_fetch = [c for c in WEATHER_CITIES if c["name"] in city_names]
+        if not cities_to_fetch:
+            # If no matches, use all cities
+            cities_to_fetch = WEATHER_CITIES
+    else:
+        cities_to_fetch = WEATHER_CITIES
+    
+    # Parse fields filter
+    fields_param = request.args.get('fields', '').strip()
+    include_all = not fields_param
+    include_temp = include_all or 'temperature' in fields_param
+    include_humidity = include_all or 'humidity' in fields_param
+    include_wind = include_all or 'wind' in fields_param
+    include_precip = include_all or 'precipitation' in fields_param
+    include_pressure = include_all or 'pressure' in fields_param
+    include_cloud = include_all or 'cloud_cover' in fields_param
+    
+    for city in cities_to_fetch:
         try:
+            # Build current weather parameters
+            current_fields = []
+            if include_temp:
+                current_fields.append("temperature_2m")
+            if include_humidity:
+                current_fields.append("relative_humidity_2m")
+            if include_wind:
+                current_fields.extend(["wind_speed_10m", "wind_direction_10m"])
+            if include_precip:
+                current_fields.append("precipitation")
+            if include_pressure:
+                current_fields.append("surface_pressure")
+            if include_cloud:
+                current_fields.append("cloud_cover")
+            
+            if not current_fields:
+                current_fields = ["temperature_2m", "relative_humidity_2m", "wind_speed_10m", "precipitation"]
+            
             params = {
                 "latitude": city["lat"],
                 "longitude": city["lon"],
-                "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation",
+                "current": ",".join(current_fields),
                 "timezone": "auto"
             }
             response = requests.get("https://api.open-meteo.com/v1/forecast", params=params, timeout=10)
@@ -386,16 +418,29 @@ def get_weather():
             data = response.json()
             current = data.get("current", {})
             
-            rows.append({
+            row = {
                 "city": city["name"],
+                "state": city.get("state", ""),
                 "latitude": city["lat"],
                 "longitude": city["lon"],
-                "temperature_c": current.get("temperature_2m"),
-                "humidity_percent": current.get("relative_humidity_2m"),
-                "wind_speed_kmh": current.get("wind_speed_10m"),
-                "precipitation_mm": current.get("precipitation"),
                 "fetched_at": fetched_at
-            })
+            }
+            
+            if include_temp:
+                row["temperature_c"] = current.get("temperature_2m")
+            if include_humidity:
+                row["humidity_percent"] = current.get("relative_humidity_2m")
+            if include_wind:
+                row["wind_speed_kmh"] = current.get("wind_speed_10m")
+                row["wind_direction_deg"] = current.get("wind_direction_10m")
+            if include_precip:
+                row["precipitation_mm"] = current.get("precipitation")
+            if include_pressure:
+                row["pressure_hpa"] = current.get("surface_pressure")
+            if include_cloud:
+                row["cloud_cover_percent"] = current.get("cloud_cover")
+            
+            rows.append(row)
         except Exception as e:
             logger.warning(f"Failed to fetch weather for {city['name']}: {e}")
     
@@ -411,166 +456,509 @@ def get_weather():
 @limiter.limit(WEATHER_RATE_LIMIT)
 def get_weather_history():
     """
-    Hourly weather history for a location. Dataset grows with each hour.
+    Hourly weather history for one or more locations. Dataset grows with each hour.
     
     Query params:
         - city: City name (default: Seattle) - one of the WEATHER_CITIES
-        - days: Number of past days to include (default: 7, max: 14)
+                  Can also be comma-separated list: city=Seattle,New York,Los Angeles
+        - cities: Alternative parameter name for comma-separated list of city names
+        - days: Number of past days to include (default: 7, max: 92 for archive, 14 for forecast)
+        - use_archive: 'true' to use historical archive API (for data older than 5 days, default: 'auto')
     
     Use case:
         - Track temperature/weather trends over the past week
         - Each hour, a new row appears in the dataset
         - Great for visualizing weather patterns
+        - Use days=30 with use_archive=true for month-long analysis
+        - Compare weather history across multiple cities
     
     Recommended refresh: 3600 seconds (hourly)
     """
-    city_name = request.args.get('city', 'Seattle')
-    days = min(14, max(1, int(request.args.get('days', 7))))
+    # Support both 'city' and 'cities' parameters for backward compatibility
+    city_param = request.args.get('city', '').strip()
+    cities_param = request.args.get('cities', '').strip()
     
-    # Find city coordinates
-    city = next((c for c in WEATHER_CITIES if c["name"].lower() == city_name.lower()), WEATHER_CITIES[0])
+    # Use cities if provided, otherwise fall back to city
+    cities_input = cities_param if cities_param else city_param
+    
+    days = min(92, max(1, int(request.args.get('days', 7))))
+    use_archive_param = request.args.get('use_archive', 'auto').lower()
+    
+    # Parse city filter - support both single city and comma-separated list
+    if cities_input:
+        city_names = [c.strip() for c in cities_input.split(',')]
+        cities_to_fetch = [c for c in WEATHER_CITIES if c["name"] in city_names]
+        if not cities_to_fetch:
+            # If no matches, default to Seattle
+            cities_to_fetch = [WEATHER_CITIES[0]]
+    else:
+        # Default to Seattle if no cities specified
+        cities_to_fetch = [WEATHER_CITIES[0]]
     
     fetched_at = datetime.utcnow().isoformat() + "Z"
+    rows = []
     
-    try:
-        # Open-Meteo historical/archive API
-        end_date = datetime.utcnow()
-        start_date = end_date - timedelta(days=days)
-        
-        params = {
-            "latitude": city["lat"],
-            "longitude": city["lon"],
-            "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,weather_code",
-            "timezone": "auto",
-            "start_date": start_date.strftime("%Y-%m-%d"),
-            "end_date": end_date.strftime("%Y-%m-%d")
-        }
-        
-        response = requests.get("https://api.open-meteo.com/v1/forecast", params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        
-        hourly = data.get("hourly", {})
-        times = hourly.get("time", [])
-        temps = hourly.get("temperature_2m", [])
-        humidity = hourly.get("relative_humidity_2m", [])
-        wind = hourly.get("wind_speed_10m", [])
-        precip = hourly.get("precipitation", [])
-        weather_codes = hourly.get("weather_code", [])
-        
-        # Weather code descriptions
-        weather_desc = {
-            0: "Clear", 1: "Mainly Clear", 2: "Partly Cloudy", 3: "Overcast",
-            45: "Foggy", 48: "Depositing Rime Fog",
-            51: "Light Drizzle", 53: "Moderate Drizzle", 55: "Dense Drizzle",
-            61: "Slight Rain", 63: "Moderate Rain", 65: "Heavy Rain",
-            71: "Slight Snow", 73: "Moderate Snow", 75: "Heavy Snow",
-            80: "Slight Showers", 81: "Moderate Showers", 82: "Violent Showers",
-            95: "Thunderstorm", 96: "Thunderstorm with Hail", 99: "Thunderstorm with Heavy Hail"
-        }
-        
-        rows = []
-        for i, time_str in enumerate(times):
-            code = weather_codes[i] if i < len(weather_codes) else 0
-            rows.append({
-                "city": city["name"],
-                "timestamp": time_str + ":00Z" if ":" in time_str else time_str,
-                "temperature_c": temps[i] if i < len(temps) else None,
-                "humidity_percent": humidity[i] if i < len(humidity) else None,
-                "wind_speed_kmh": wind[i] if i < len(wind) else None,
-                "precipitation_mm": precip[i] if i < len(precip) else None,
-                "weather_code": code,
-                "weather": weather_desc.get(code, "Unknown"),
-                "fetched_at": fetched_at
-            })
-        
-        return make_csv_response(rows)
-    except Exception as e:
-        logger.warning(f"Failed to fetch weather history: {e}")
-        return Response(f"error,{str(e)}", mimetype='text/csv'), 500
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    # Determine which API to use
+    # Archive API has 5-day delay, so use forecast API for recent data (< 6 days)
+    # unless explicitly requested
+    use_archive = False
+    if use_archive_param == 'true':
+        use_archive = True
+    elif use_archive_param == 'false':
+        use_archive = False
+    else:  # 'auto'
+        # Use archive for data older than 6 days
+        use_archive = days > 6
+    
+    # Weather code descriptions (WMO Weather interpretation codes)
+    weather_desc = {
+        0: "Clear", 1: "Mainly Clear", 2: "Partly Cloudy", 3: "Overcast",
+        45: "Foggy", 48: "Depositing Rime Fog",
+        51: "Light Drizzle", 53: "Moderate Drizzle", 55: "Dense Drizzle",
+        61: "Slight Rain", 63: "Moderate Rain", 65: "Heavy Rain",
+        71: "Slight Snow", 73: "Moderate Snow", 75: "Heavy Snow",
+        80: "Slight Showers", 81: "Moderate Showers", 82: "Violent Showers",
+        85: "Slight Snow Showers", 86: "Heavy Snow Showers",
+        95: "Thunderstorm", 96: "Thunderstorm with Hail", 99: "Thunderstorm with Heavy Hail"
+    }
+    
+    for city in cities_to_fetch:
+        try:
+            params = {
+                "latitude": city["lat"],
+                "longitude": city["lon"],
+                "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,weather_code,pressure_msl",
+                "timezone": "auto",
+                "start_date": start_date.strftime("%Y-%m-%d"),
+                "end_date": end_date.strftime("%Y-%m-%d")
+            }
+            
+            # Use archive API for historical data, forecast API for recent data
+            if use_archive:
+                api_url = "https://api.open-meteo.com/v1/archive"
+            else:
+                api_url = "https://api.open-meteo.com/v1/forecast"
+            
+            response = requests.get(api_url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            
+            hourly = data.get("hourly", {})
+            times = hourly.get("time", [])
+            temps = hourly.get("temperature_2m", [])
+            humidity = hourly.get("relative_humidity_2m", [])
+            wind = hourly.get("wind_speed_10m", [])
+            precip = hourly.get("precipitation", [])
+            weather_codes = hourly.get("weather_code", [])
+            pressure = hourly.get("pressure_msl", [])
+            
+            for i, time_str in enumerate(times):
+                code = weather_codes[i] if i < len(weather_codes) else 0
+                # Parse timestamp - handle both formats
+                if "T" in time_str:
+                    timestamp_str = time_str
+                else:
+                    timestamp_str = time_str + "T00:00:00Z"
+                
+                rows.append({
+                    "city": city["name"],
+                    "state": city.get("state", ""),
+                    "timestamp": timestamp_str,
+                    "temperature_c": round(temps[i], 1) if i < len(temps) and temps[i] is not None else None,
+                    "humidity_percent": humidity[i] if i < len(humidity) and humidity[i] is not None else None,
+                    "wind_speed_kmh": round(wind[i], 1) if i < len(wind) and wind[i] is not None else None,
+                    "precipitation_mm": round(precip[i], 2) if i < len(precip) and precip[i] is not None else None,
+                    "pressure_hpa": round(pressure[i], 1) if i < len(pressure) and pressure[i] is not None else None,
+                    "weather_code": code,
+                    "weather": weather_desc.get(code, "Unknown"),
+                    "fetched_at": fetched_at
+                })
+        except Exception as e:
+            logger.warning(f"Failed to fetch weather history for {city['name']}: {e}")
+    
+    # Sort by city, then timestamp
+    rows.sort(key=lambda x: (x["city"], x["timestamp"]))
+    
+    return make_csv_response(rows)
 
 
 # ============================================================================
-# NWS Weather Forecast - Updates every few hours
+# Weather Forecast (Open-Meteo) - Multi-day forecasts for multiple cities
 # Recommended refresh: 3600 seconds (1 hour)
 # ============================================================================
 
-NWS_LOCATIONS = {
-    "seattle": {"name": "Seattle, WA", "office": "SEW", "gridX": 124, "gridY": 67},
-    "new_york": {"name": "New York, NY", "office": "OKX", "gridX": 33, "gridY": 37},
-    "los_angeles": {"name": "Los Angeles, CA", "office": "LOX", "gridX": 154, "gridY": 44},
-    "chicago": {"name": "Chicago, IL", "office": "LOT", "gridX": 65, "gridY": 76},
-}
-
-@demo_stream_bp.route('/forecast/<location>', methods=['GET'])
+@demo_stream_bp.route('/weather/forecast', methods=['GET'])
 @limiter.limit(WEATHER_RATE_LIMIT)
-def get_forecast(location: str):
+def get_weather_forecast():
     """
-    7-day forecast from NWS. Updates every few hours.
-    Locations: seattle, new_york, los_angeles, chicago
-    Recommended refresh: 3600 seconds
+    Multi-day weather forecast for US cities. Updates every few hours.
+    
+    Query params:
+        - cities: Comma-separated list of city names (default: all cities)
+                  Example: cities=Seattle,New York,Los Angeles
+        - days: Number of forecast days (default: 7, max: 16)
+        - hourly: 'true' to get hourly forecast data (default: 'false' for daily)
+    
+    Use case:
+        - Compare forecasts across multiple cities
+        - Track upcoming weather patterns
+        - Plan based on forecasted conditions
+        - Use hourly=true for detailed hourly forecasts
+    
+    Recommended refresh: 3600 seconds (1 hour)
     """
-    loc_key = location.lower().replace("-", "_")
-    if loc_key not in NWS_LOCATIONS:
-        return Response(f"error,Unknown location. Use: {','.join(NWS_LOCATIONS.keys())}", mimetype='text/csv'), 400
+    cities_param = request.args.get('cities', '').strip()
+    days = min(16, max(1, int(request.args.get('days', 7))))
+    hourly_mode = request.args.get('hourly', 'false').lower() == 'true'
     
-    loc = NWS_LOCATIONS[loc_key]
+    # Parse city filter
+    if cities_param:
+        city_names = [c.strip() for c in cities_param.split(',')]
+        cities_to_fetch = [c for c in WEATHER_CITIES if c["name"] in city_names]
+        if not cities_to_fetch:
+            cities_to_fetch = WEATHER_CITIES
+    else:
+        cities_to_fetch = WEATHER_CITIES
     
-    try:
-        url = f"https://api.weather.gov/gridpoints/{loc['office']}/{loc['gridX']},{loc['gridY']}/forecast"
-        headers = {"User-Agent": "(DataFormulator, demo@example.com)"}
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        
-        fetched_at = datetime.utcnow().isoformat() + "Z"
-        rows = []
-        
-        for period in data.get("properties", {}).get("periods", []):
+    fetched_at = datetime.utcnow().isoformat() + "Z"
+    rows = []
+    
+    for city in cities_to_fetch:
+        try:
+            if hourly_mode:
+                # Hourly forecast
+                params = {
+                    "latitude": city["lat"],
+                    "longitude": city["lon"],
+                    "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,weather_code,pressure_msl",
+                    "forecast_days": days,
+                    "timezone": "auto"
+                }
+                response = requests.get("https://api.open-meteo.com/v1/forecast", params=params, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                
+                hourly = data.get("hourly", {})
+                times = hourly.get("time", [])
+                temps = hourly.get("temperature_2m", [])
+                humidity = hourly.get("relative_humidity_2m", [])
+                wind = hourly.get("wind_speed_10m", [])
+                precip = hourly.get("precipitation", [])
+                weather_codes = hourly.get("weather_code", [])
+                pressure = hourly.get("pressure_msl", [])
+                
+                weather_desc = {
+                    0: "Clear", 1: "Mainly Clear", 2: "Partly Cloudy", 3: "Overcast",
+                    45: "Foggy", 48: "Depositing Rime Fog",
+                    51: "Light Drizzle", 53: "Moderate Drizzle", 55: "Dense Drizzle",
+                    61: "Slight Rain", 63: "Moderate Rain", 65: "Heavy Rain",
+                    71: "Slight Snow", 73: "Moderate Snow", 75: "Heavy Snow",
+                    80: "Slight Showers", 81: "Moderate Showers", 82: "Violent Showers",
+                    85: "Slight Snow Showers", 86: "Heavy Snow Showers",
+                    95: "Thunderstorm", 96: "Thunderstorm with Hail", 99: "Thunderstorm with Heavy Hail"
+                }
+                
+                for i, time_str in enumerate(times):
+                    code = weather_codes[i] if i < len(weather_codes) else 0
+                    rows.append({
+                        "city": city["name"],
+                        "state": city.get("state", ""),
+                        "timestamp": time_str,
+                        "temperature_c": round(temps[i], 1) if i < len(temps) and temps[i] is not None else None,
+                        "humidity_percent": humidity[i] if i < len(humidity) and humidity[i] is not None else None,
+                        "wind_speed_kmh": round(wind[i], 1) if i < len(wind) and wind[i] is not None else None,
+                        "precipitation_mm": round(precip[i], 2) if i < len(precip) and precip[i] is not None else None,
+                        "pressure_hpa": round(pressure[i], 1) if i < len(pressure) and pressure[i] is not None else None,
+                        "weather_code": code,
+                        "weather": weather_desc.get(code, "Unknown"),
+                        "fetched_at": fetched_at
+                    })
+            else:
+                # Daily forecast
+                params = {
+                    "latitude": city["lat"],
+                    "longitude": city["lon"],
+                    "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,weather_code",
+                    "forecast_days": days,
+                    "timezone": "auto"
+                }
+                response = requests.get("https://api.open-meteo.com/v1/forecast", params=params, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                
+                daily = data.get("daily", {})
+                times = daily.get("time", [])
+                temp_max = daily.get("temperature_2m_max", [])
+                temp_min = daily.get("temperature_2m_min", [])
+                precip = daily.get("precipitation_sum", [])
+                wind = daily.get("wind_speed_10m_max", [])
+                weather_codes = daily.get("weather_code", [])
+                
+                weather_desc = {
+                    0: "Clear", 1: "Mainly Clear", 2: "Partly Cloudy", 3: "Overcast",
+                    45: "Foggy", 48: "Depositing Rime Fog",
+                    51: "Light Drizzle", 53: "Moderate Drizzle", 55: "Dense Drizzle",
+                    61: "Slight Rain", 63: "Moderate Rain", 65: "Heavy Rain",
+                    71: "Slight Snow", 73: "Moderate Snow", 75: "Heavy Snow",
+                    80: "Slight Showers", 81: "Moderate Showers", 82: "Violent Showers",
+                    85: "Slight Snow Showers", 86: "Heavy Snow Showers",
+                    95: "Thunderstorm", 96: "Thunderstorm with Hail", 99: "Thunderstorm with Heavy Hail"
+                }
+                
+                for i, time_str in enumerate(times):
+                    code = weather_codes[i] if i < len(weather_codes) else 0
+                    rows.append({
+                        "city": city["name"],
+                        "state": city.get("state", ""),
+                        "date": time_str,
+                        "temperature_max_c": round(temp_max[i], 1) if i < len(temp_max) and temp_max[i] is not None else None,
+                        "temperature_min_c": round(temp_min[i], 1) if i < len(temp_min) and temp_min[i] is not None else None,
+                        "precipitation_mm": round(precip[i], 2) if i < len(precip) and precip[i] is not None else None,
+                        "wind_speed_max_kmh": round(wind[i], 1) if i < len(wind) and wind[i] is not None else None,
+                        "weather_code": code,
+                        "weather": weather_desc.get(code, "Unknown"),
+                        "fetched_at": fetched_at
+                    })
+        except Exception as e:
+            logger.warning(f"Failed to fetch forecast for {city['name']}: {e}")
+    
+    return make_csv_response(rows)
+
+
+# ============================================================================
+# Today's Weather Comparison - Current weather across multiple cities
+# Recommended refresh: 300 seconds (5 minutes)
+# ============================================================================
+
+@demo_stream_bp.route('/weather/today', methods=['GET'])
+@limiter.limit(WEATHER_RATE_LIMIT)
+def get_weather_today():
+    """
+    Today's current weather for multiple US cities - perfect for comparison.
+    
+    Query params:
+        - cities: Comma-separated list of city names (default: all cities)
+                  Example: cities=Seattle,New York,Los Angeles,Miami
+        - limit: Maximum number of cities to return (default: 20, max: 50)
+    
+    Use case:
+        - Compare current weather conditions across US cities
+        - Visualize temperature, humidity, wind patterns geographically
+        - Great for maps, bar charts, and comparison visualizations
+        - Perfect for "weather dashboard" style analysis
+    
+    Recommended refresh: 300 seconds (5 minutes)
+    """
+    cities_param = request.args.get('cities', '').strip()
+    limit = min(50, max(1, int(request.args.get('limit', 20))))
+    
+    # Parse city filter
+    if cities_param:
+        city_names = [c.strip() for c in cities_param.split(',')]
+        cities_to_fetch = [c for c in WEATHER_CITIES if c["name"] in city_names][:limit]
+        if not cities_to_fetch:
+            cities_to_fetch = WEATHER_CITIES[:limit]
+    else:
+        cities_to_fetch = WEATHER_CITIES[:limit]
+    
+    fetched_at = datetime.utcnow().isoformat() + "Z"
+    rows = []
+    
+    for city in cities_to_fetch:
+        try:
+            params = {
+                "latitude": city["lat"],
+                "longitude": city["lon"],
+                "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,precipitation,pressure_msl,cloud_cover,weather_code",
+                "timezone": "auto"
+            }
+            response = requests.get("https://api.open-meteo.com/v1/forecast", params=params, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            current = data.get("current", {})
+            
+            weather_desc = {
+                0: "Clear", 1: "Mainly Clear", 2: "Partly Cloudy", 3: "Overcast",
+                45: "Foggy", 48: "Depositing Rime Fog",
+                51: "Light Drizzle", 53: "Moderate Drizzle", 55: "Dense Drizzle",
+                61: "Slight Rain", 63: "Moderate Rain", 65: "Heavy Rain",
+                71: "Slight Snow", 73: "Moderate Snow", 75: "Heavy Snow",
+                80: "Slight Showers", 81: "Moderate Showers", 82: "Violent Showers",
+                85: "Slight Snow Showers", 86: "Heavy Snow Showers",
+                95: "Thunderstorm", 96: "Thunderstorm with Hail", 99: "Thunderstorm with Heavy Hail"
+            }
+            
+            weather_code = current.get("weather_code", 0)
+            
             rows.append({
-                "location": loc["name"],
-                "period": period.get("name"),
-                "temperature": period.get("temperature"),
-                "temperature_unit": period.get("temperatureUnit"),
-                "wind_speed": period.get("windSpeed"),
-                "wind_direction": period.get("windDirection"),
-                "forecast": period.get("shortForecast"),
+                "city": city["name"],
+                "state": city.get("state", ""),
+                "latitude": city["lat"],
+                "longitude": city["lon"],
+                "temperature_c": round(current.get("temperature_2m"), 1) if current.get("temperature_2m") is not None else None,
+                "temperature_f": round(current.get("temperature_2m") * 9/5 + 32, 1) if current.get("temperature_2m") is not None else None,
+                "humidity_percent": current.get("relative_humidity_2m"),
+                "wind_speed_kmh": round(current.get("wind_speed_10m"), 1) if current.get("wind_speed_10m") is not None else None,
+                "wind_direction_deg": current.get("wind_direction_10m"),
+                "precipitation_mm": round(current.get("precipitation"), 2) if current.get("precipitation") is not None else None,
+                "pressure_hpa": round(current.get("pressure_msl"), 1) if current.get("pressure_msl") is not None else None,
+                "cloud_cover_percent": current.get("cloud_cover"),
+                "weather_code": weather_code,
+                "weather": weather_desc.get(weather_code, "Unknown"),
                 "fetched_at": fetched_at
             })
-        
-        return make_csv_response(rows)
-    except Exception as e:
-        return Response(f"error,{str(e)}", mimetype='text/csv'), 500
+        except Exception as e:
+            logger.warning(f"Failed to fetch weather for {city['name']}: {e}")
+    
+    return make_csv_response(rows)
 
 
 # ============================================================================
 # yfinance - Stock/Financial Data via Yahoo Finance
-# Single unified API with historical daily data + recent 15min intraday data
-# Recommended refresh: 300 seconds (5 minutes) during market hours
+# Three pre-baked APIs: history (daily), recent (intraday), financials (metrics)
 # ============================================================================
 
 DEFAULT_SYMBOLS = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA"]
 
+# S&P 100 Companies (as of 2024)
+SP100_SYMBOLS = [
+    # Technology
+    "AAPL", "MSFT", "GOOGL", "GOOG", "META", "NVDA", "AVGO", "ORCL", "CRM", "CSCO",
+    "ACN", "ADBE", "AMD", "INTC", "IBM", "QCOM", "TXN",
+    # Consumer/Retail
+    "AMZN", "TSLA", "HD", "MCD", "NKE", "SBUX", "TGT", "LOW", "COST",
+    # Financial Services
+    "JPM", "V", "MA", "BAC", "WFC", "GS", "MS", "BLK", "SPGI", "AXP", "C", "BK",
+    # Healthcare
+    "UNH", "JNJ", "LLY", "PFE", "ABBV", "MRK", "TMO", "ABT", "DHR", "BMY", "AMGN", 
+    "GILD", "MDT", "CVS",
+    # Energy
+    "XOM", "CVX", "COP", "SLB",
+    # Industrials
+    "CAT", "GE", "HON", "UNP", "UPS", "RTX", "BA", "LMT", "DE", "MMM", "EMR",
+    # Consumer Staples
+    "PG", "KO", "PEP", "WMT", "PM", "MO", "CL", "MDLZ",
+    # Communications
+    "DIS", "CMCSA", "NFLX", "T", "VZ", "TMUS",
+    # Utilities & Real Estate
+    "NEE", "DUK", "SO",
+    # Materials
+    "LIN", "DOW",
+    # Other Major Companies
+    "BRK-B", "PYPL", "NOW", "INTU", "AMAT", "ADI", "MU", "LRCX", "KLAC",
+    "SCHW", "CB", "PNC", "USB", "TFC",
+    "ISRG", "VRTX", "REGN", "ZTS", "SYK", "ELV",
+    "F", "GM",
+    "ADP", "FIS", "ITW", "GD", "NOC",
+    "EXC", "AEP", "D", "SRE", "PEG"
+]
 
-@demo_stream_bp.route('/yfinance', methods=['GET'])
+
+# Helper functions for yfinance endpoints
+def _yf_is_valid(val):
+    """Check if value is valid (not NaN/None)"""
+    try:
+        return val is not None and not (isinstance(val, float) and math.isnan(val))
+    except:
+        return False
+
+
+def _yf_format_timestamp(date_obj):
+    """Convert pandas Timestamp or datetime to string"""
+    try:
+        if hasattr(date_obj, 'tz_convert'):
+            date_utc = date_obj.tz_convert('UTC')
+        elif hasattr(date_obj, 'tz_localize') and date_obj.tz is not None:
+            date_utc = date_obj.tz_convert('UTC')
+        else:
+            date_utc = date_obj
+        
+        if hasattr(date_utc, 'to_pydatetime'):
+            date_utc = date_utc.to_pydatetime()
+        elif hasattr(date_utc, 'timestamp'):
+            date_utc = datetime.fromtimestamp(date_utc.timestamp())
+        
+        if isinstance(date_utc, datetime):
+            return date_utc.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            return str(date_utc)
+    except:
+        return str(date_obj)
+
+
+@demo_stream_bp.route('/yfinance/history', methods=['GET'])
 @limiter.limit(YFINANCE_RATE_LIMIT)
-def get_yfinance():
+def get_yfinance_history():
     """
-    Stock prices via yfinance with historical daily data + recent intraday data (15min intervals).
+    6-month daily stock price history via yfinance.
     
-    Returns a complete dataset combining:
-    - Historical daily data from start_date (default: 6 months ago)
-    - Recent intraday data at 15-minute intervals (last ~5-7 days)
-    - Today's live intraday data points
+    Returns daily OHLCV data for the last 6 months.
     
     Query params:
         - symbols: comma-separated stock symbols (default: AAPL,MSFT,GOOGL,AMZN,META,NVDA,TSLA)
-        - start_date: YYYY-MM-DD format (default: 6 months ago)
     
-    Example use case:
-        - /api/demo-stream/yfinance?symbols=AAPL,MSFT&start_date=2025-07-01
-        - Returns daily data from July 2025, plus recent 15min intraday data
-        - New data appears each trading day
+    Example:
+        /api/demo-stream/yfinance/history?symbols=AAPL,MSFT,GOOGL
+    
+    Recommended refresh: 3600 seconds (1 hour)
+    """
+    symbols_param = request.args.get('symbols', ','.join(DEFAULT_SYMBOLS))
+    symbols = [s.strip().upper() for s in symbols_param.split(',') if s.strip()][:10]
+    
+    now = datetime.utcnow()
+    start_date = now - timedelta(days=180)  # 6 months
+    
+    fetched_at = now.isoformat() + "Z"
+    rows = []
+    
+    for symbol in symbols:
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(start=start_date.strftime("%Y-%m-%d"), end=now.strftime("%Y-%m-%d"))
+            
+            for date, row in hist.iterrows():
+                try:
+                    date_str = date.strftime("%Y-%m-%d") if hasattr(date, 'strftime') else str(date)
+                except:
+                    date_str = str(date)
+                
+                rows.append({
+                    "symbol": symbol,
+                    "date": date_str,
+                    "open": round(row["Open"], 2) if _yf_is_valid(row["Open"]) else None,
+                    "high": round(row["High"], 2) if _yf_is_valid(row["High"]) else None,
+                    "low": round(row["Low"], 2) if _yf_is_valid(row["Low"]) else None,
+                    "close": round(row["Close"], 2) if _yf_is_valid(row["Close"]) else None,
+                    "volume": int(row["Volume"]) if _yf_is_valid(row["Volume"]) else None,
+                    "fetched_at": fetched_at
+                })
+                    
+        except Exception as e:
+            logger.warning(f"Failed to fetch history for {symbol}: {e}")
+    
+    # Sort by symbol, then date
+    rows.sort(key=lambda x: (x["symbol"], x["date"]))
+    
+    return make_csv_response(rows)
+
+
+@demo_stream_bp.route('/yfinance/recent', methods=['GET'])
+@limiter.limit(YFINANCE_RATE_LIMIT)
+def get_yfinance_recent():
+    """
+    Recent intraday stock prices (15-minute intervals) via yfinance.
+    
+    Returns 15-minute interval data for the last 5 trading days.
+    yfinance typically provides intraday data for the last 5-7 days only.
+    
+    Query params:
+        - symbols: comma-separated stock symbols (default: AAPL,MSFT,GOOGL,AMZN,META,NVDA,TSLA)
+    
+    Example:
+        /api/demo-stream/yfinance/recent?symbols=AAPL,MSFT,GOOGL
     
     Recommended refresh: 300 seconds (5 minutes) during market hours
     """
@@ -578,173 +966,34 @@ def get_yfinance():
     symbols = [s.strip().upper() for s in symbols_param.split(',') if s.strip()][:10]
     
     now = datetime.utcnow()
-    today = now.date()
-    
-    # Parse start_date, default to 6 months ago
-    start_date_str = request.args.get('start_date')
-    if start_date_str:
-        try:
-            start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-        except:
-            start_date = now - timedelta(days=180)
-    else:
-        start_date = now - timedelta(days=180)
-    
-    # Calculate number of days
-    days = (now - start_date).days
-    
-    # yfinance typically provides intraday data for last 5-7 days
-    intraday_days_limit = 7
-    intraday_interval = '15m'
-    
     fetched_at = now.isoformat() + "Z"
     rows = []
-    
-    # Helper to check if value is valid (not NaN/None)
-    def is_valid(val):
-        try:
-            return val is not None and not (isinstance(val, float) and math.isnan(val))
-        except:
-            return False
-    
-    # Helper to format timestamp
-    def format_timestamp(date_obj):
-        """Convert pandas Timestamp or datetime to string"""
-        try:
-            if hasattr(date_obj, 'tz_convert'):
-                date_utc = date_obj.tz_convert('UTC')
-            elif hasattr(date_obj, 'tz_localize') and date_obj.tz is not None:
-                date_utc = date_obj.tz_convert('UTC')
-            else:
-                date_utc = date_obj
-            
-            if hasattr(date_utc, 'to_pydatetime'):
-                date_utc = date_utc.to_pydatetime()
-            elif hasattr(date_utc, 'timestamp'):
-                date_utc = datetime.fromtimestamp(date_utc.timestamp())
-            
-            if isinstance(date_utc, datetime):
-                return date_utc.strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                return str(date_utc)
-        except:
-            return str(date_obj)
     
     for symbol in symbols:
         try:
             ticker = yf.Ticker(symbol)
             
-            # Get historical daily data for older period (before intraday range)
-            daily_days = max(0, days - intraday_days_limit)
+            # Get 5 days of 15-minute interval data
+            hist = ticker.history(interval='15m', period='5d')
             
-            if daily_days > 0:
-                daily_end = now - timedelta(days=intraday_days_limit)
-                hist_daily = ticker.history(start=start_date.strftime("%Y-%m-%d"), end=daily_end.strftime("%Y-%m-%d"))
-                
-                for date, row in hist_daily.iterrows():
-                    try:
-                        if hasattr(date, 'strftime'):
-                            date_str = date.strftime("%Y-%m-%d")
-                        else:
-                            date_str = str(date)
-                    except:
-                        date_str = str(date)
-                    
-                    rows.append({
-                        "symbol": symbol,
-                        "timestamp": date_str + " 00:00:00",
-                        "date": date_str,
-                        "open": round(row["Open"], 2) if is_valid(row["Open"]) else None,
-                        "high": round(row["High"], 2) if is_valid(row["High"]) else None,
-                        "low": round(row["Low"], 2) if is_valid(row["Low"]) else None,
-                        "close": round(row["Close"], 2) if is_valid(row["Close"]) else None,
-                        "volume": int(row["Volume"]) if is_valid(row["Volume"]) else None,
-                        "data_type": "daily",
-                        "fetched_at": fetched_at
-                    })
-            
-            # Get recent intraday data at 15min intervals (last 5-7 days excluding today)
-            try:
-                hist_intraday = ticker.history(interval=intraday_interval, period='7d')
-                
-                if not hist_intraday.empty:
-                    for date, row in hist_intraday.iterrows():
-                        # Skip today (we'll get it separately to ensure latest)
-                        try:
-                            if hasattr(date, 'date'):
-                                date_only = date.date()
-                            elif hasattr(date, 'to_pydatetime'):
-                                date_only = date.to_pydatetime().date()
-                            else:
-                                date_only = date
-                            
-                            if isinstance(date_only, str):
-                                date_only = datetime.strptime(date_only, "%Y-%m-%d").date()
-                            
-                            if date_only == today:
-                                continue  # Skip today, will get it below
-                        except:
-                            pass
-                        
-                        timestamp_str = format_timestamp(date)
-                        
-                        rows.append({
-                            "symbol": symbol,
-                            "timestamp": timestamp_str,
-                            "date": timestamp_str.split()[0] if ' ' in timestamp_str else str(date),
-                            "open": round(row["Open"], 2) if is_valid(row["Open"]) else None,
-                            "high": round(row["High"], 2) if is_valid(row["High"]) else None,
-                            "low": round(row["Low"], 2) if is_valid(row["Low"]) else None,
-                            "close": round(row["Close"], 2) if is_valid(row["Close"]) else None,
-                            "volume": int(row["Volume"]) if is_valid(row["Volume"]) else None,
-                            "data_type": "intraday",
-                            "fetched_at": fetched_at
-                        })
-            except Exception as e:
-                logger.warning(f"Failed to fetch intraday historical for {symbol}: {e}")
-            
-            # Get today's intraday data (always fetch to ensure latest)
-            hist_intraday_today = ticker.history(interval=intraday_interval, period='1d')
-            
-            if not hist_intraday_today.empty:
-                for date, row in hist_intraday_today.iterrows():
-                    timestamp_str = format_timestamp(date)
+            if not hist.empty:
+                for date, row in hist.iterrows():
+                    timestamp_str = _yf_format_timestamp(date)
                     
                     rows.append({
                         "symbol": symbol,
                         "timestamp": timestamp_str,
-                        "date": today.strftime("%Y-%m-%d"),
-                        "open": round(row["Open"], 2) if is_valid(row["Open"]) else None,
-                        "high": round(row["High"], 2) if is_valid(row["High"]) else None,
-                        "low": round(row["Low"], 2) if is_valid(row["Low"]) else None,
-                        "close": round(row["Close"], 2) if is_valid(row["Close"]) else None,
-                        "volume": int(row["Volume"]) if is_valid(row["Volume"]) else None,
-                        "data_type": "intraday",
+                        "date": timestamp_str.split()[0] if ' ' in timestamp_str else str(date),
+                        "open": round(row["Open"], 2) if _yf_is_valid(row["Open"]) else None,
+                        "high": round(row["High"], 2) if _yf_is_valid(row["High"]) else None,
+                        "low": round(row["Low"], 2) if _yf_is_valid(row["Low"]) else None,
+                        "close": round(row["Close"], 2) if _yf_is_valid(row["Close"]) else None,
+                        "volume": int(row["Volume"]) if _yf_is_valid(row["Volume"]) else None,
                         "fetched_at": fetched_at
                     })
-            else:
-                # If no intraday data, try to get today's price
-                try:
-                    info = ticker.info
-                    price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose')
-                    if price:
-                        rows.append({
-                            "symbol": symbol,
-                            "timestamp": today.strftime("%Y-%m-%d") + " 00:00:00",
-                            "date": today.strftime("%Y-%m-%d"),
-                            "open": price,
-                            "high": price,
-                            "low": price,
-                            "close": price,
-                            "volume": info.get('volume', 0),
-                            "data_type": "daily",
-                            "fetched_at": fetched_at
-                        })
-                except:
-                    pass
                     
         except Exception as e:
-            logger.warning(f"Failed to fetch data for {symbol}: {e}")
+            logger.warning(f"Failed to fetch recent data for {symbol}: {e}")
     
     # Sort by symbol, then timestamp
     rows.sort(key=lambda x: (x["symbol"], x["timestamp"]))
@@ -752,75 +1001,176 @@ def get_yfinance():
     return make_csv_response(rows)
 
 
+@demo_stream_bp.route('/yfinance/financials', methods=['GET'])
+@limiter.limit(YFINANCE_RATE_LIMIT)
+def get_yfinance_financials():
+    """
+    Key financial metrics snapshot via yfinance for S&P 100 companies.
+    
+    Returns current financial data for each stock including market cap,
+    P/E ratio, EPS, dividend yield, 52-week range, and more.
+    
+    Query params:
+        - symbols: comma-separated stock symbols (default: all S&P 100 companies)
+    
+    Example:
+        /api/demo-stream/yfinance/financials
+        /api/demo-stream/yfinance/financials?symbols=AAPL,MSFT,GOOGL,AMZN
+    
+    Recommended refresh: 3600 seconds (1 hour)
+    """
+    symbols_param = request.args.get('symbols')
+    if symbols_param:
+        symbols = [s.strip().upper() for s in symbols_param.split(',') if s.strip()]
+    else:
+        symbols = SP100_SYMBOLS
+    
+    now = datetime.utcnow()
+    fetched_at = now.isoformat() + "Z"
+    rows = []
+    
+    for symbol in symbols:
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            
+            # Extract key financial metrics
+            rows.append({
+                "symbol": symbol,
+                "name": info.get('shortName') or info.get('longName') or symbol,
+                "sector": info.get('sector') or 'N/A',
+                "industry": info.get('industry') or 'N/A',
+                "current_price": round(info.get('currentPrice') or info.get('regularMarketPrice') or 0, 2),
+                "previous_close": round(info.get('previousClose') or 0, 2),
+                "market_cap": info.get('marketCap') or 0,
+                "pe_ratio": round(info.get('trailingPE') or 0, 2) if info.get('trailingPE') else None,
+                "forward_pe": round(info.get('forwardPE') or 0, 2) if info.get('forwardPE') else None,
+                "eps": round(info.get('trailingEps') or 0, 2) if info.get('trailingEps') else None,
+                "dividend_yield": round((info.get('dividendYield') or 0) * 100, 2) if info.get('dividendYield') else 0,
+                "week_52_high": round(info.get('fiftyTwoWeekHigh') or 0, 2),
+                "week_52_low": round(info.get('fiftyTwoWeekLow') or 0, 2),
+                "avg_volume": info.get('averageVolume') or 0,
+                "beta": round(info.get('beta') or 0, 2) if info.get('beta') else None,
+                "profit_margin": round((info.get('profitMargins') or 0) * 100, 2) if info.get('profitMargins') else None,
+                "revenue": info.get('totalRevenue') or 0,
+                "fetched_at": fetched_at
+            })
+                    
+        except Exception as e:
+            logger.warning(f"Failed to fetch financials for {symbol}: {e}")
+    
+    # Sort by symbol
+    rows.sort(key=lambda x: x["symbol"])
+    
+    return make_csv_response(rows)
+
+
 # ============================================================================
-# Mock Live Sales Feed - Updates every second (for demo)
-# Rich schema with programmatically correlated data
+# Mock Live Sales Feed - Accumulating dataset with rolling 1000 records
+# Similar to ISS tracking - data accumulates in memory
+# Recommended refresh: 1-5 seconds
 # ============================================================================
+
+# Thread-safe storage for sales transaction history
+_sales_lock = threading.Lock()
+_sales_history: deque = deque(maxlen=1000)  # Keep last 1000 transactions
+_sales_last_update: Optional[datetime] = None
+
+# Products with realistic pricing and popularity
+_SALES_PRODUCTS = [
+    {"name": "Wireless Headphones", "category": "Electronics", "base_price": 79.99, "popularity": 0.15},
+    {"name": "Smart Watch", "category": "Electronics", "base_price": 199.99, "popularity": 0.10},
+    {"name": "Running Shoes", "category": "Sports", "base_price": 129.99, "popularity": 0.12},
+    {"name": "Yoga Mat", "category": "Sports", "base_price": 34.99, "popularity": 0.08},
+    {"name": "Coffee Maker", "category": "Home", "base_price": 89.99, "popularity": 0.09},
+    {"name": "Desk Lamp", "category": "Home", "base_price": 45.99, "popularity": 0.07},
+    {"name": "Backpack", "category": "Accessories", "base_price": 59.99, "popularity": 0.11},
+    {"name": "Water Bottle", "category": "Accessories", "base_price": 24.99, "popularity": 0.13},
+    {"name": "Bluetooth Speaker", "category": "Electronics", "base_price": 49.99, "popularity": 0.08},
+    {"name": "Fitness Tracker", "category": "Electronics", "base_price": 69.99, "popularity": 0.07},
+]
+
+_SALES_REGIONS = ["North America", "Europe", "Asia Pacific", "Latin America"]
+_SALES_REGION_WEIGHTS = [0.45, 0.30, 0.18, 0.07]
+
+_SALES_CHANNELS = ["Web", "Mobile App", "In-Store", "Partner"]
+_SALES_CHANNEL_WEIGHTS = [0.40, 0.35, 0.15, 0.10]
+
+
+def _generate_sale_transaction(timestamp: datetime) -> Dict[str, Any]:
+    """Generate a single sale transaction"""
+    product = random.choices(_SALES_PRODUCTS, weights=[p["popularity"] for p in _SALES_PRODUCTS])[0]
+    region = random.choices(_SALES_REGIONS, weights=_SALES_REGION_WEIGHTS)[0]
+    channel = random.choices(_SALES_CHANNELS, weights=_SALES_CHANNEL_WEIGHTS)[0]
+    
+    quantity = random.choices([1, 2, 3, 4, 5], weights=[0.5, 0.25, 0.15, 0.07, 0.03])[0]
+    discount = random.choices([0, 5, 10, 15, 20], weights=[0.6, 0.15, 0.12, 0.08, 0.05])[0]
+    
+    unit_price = round(product["base_price"] * (1 - discount / 100), 2)
+    total = round(unit_price * quantity, 2)
+    
+    return {
+        "transaction_id": f"TX{int(timestamp.timestamp() * 1000) % 100000000:08d}",
+        "timestamp": timestamp.isoformat() + "Z",
+        "product": product["name"],
+        "category": product["category"],
+        "quantity": quantity,
+        "unit_price": unit_price,
+        "discount_pct": discount,
+        "total": total,
+        "region": region,
+        "channel": channel,
+    }
 
 
 @demo_stream_bp.route('/live-sales', methods=['GET'])
 @limiter.limit(MOCK_RATE_LIMIT)
 def get_live_sales():
     """
-    Simulated live sales feed. Updates every second.
-    Each refresh shows recent "transactions" with product details.
-    Recommended refresh: 1 second
+    Simulated live sales feed with accumulating transaction history.
+    Data accumulates in memory and maintains a rolling record of the last 1000 transactions.
+    Each refresh may add new transactions and returns the complete accumulated dataset.
+    
+    Query params:
+        - limit: Maximum number of records to return (default: 1000, max: 1000)
+    
+    Recommended refresh: 1-5 seconds
     """
+    global _sales_last_update
+    
     now = datetime.utcnow()
-    hour_of_day = now.hour + now.minute / 60
+    limit = min(1000, max(1, int(request.args.get('limit', 1000))))
     
-    # Products with realistic pricing and popularity
-    products = [
-        {"name": "Wireless Headphones", "category": "Electronics", "base_price": 79.99, "popularity": 0.15},
-        {"name": "Smart Watch", "category": "Electronics", "base_price": 199.99, "popularity": 0.10},
-        {"name": "Running Shoes", "category": "Sports", "base_price": 129.99, "popularity": 0.12},
-        {"name": "Yoga Mat", "category": "Sports", "base_price": 34.99, "popularity": 0.08},
-        {"name": "Coffee Maker", "category": "Home", "base_price": 89.99, "popularity": 0.09},
-        {"name": "Desk Lamp", "category": "Home", "base_price": 45.99, "popularity": 0.07},
-        {"name": "Backpack", "category": "Accessories", "base_price": 59.99, "popularity": 0.11},
-        {"name": "Water Bottle", "category": "Accessories", "base_price": 24.99, "popularity": 0.13},
-        {"name": "Bluetooth Speaker", "category": "Electronics", "base_price": 49.99, "popularity": 0.08},
-        {"name": "Fitness Tracker", "category": "Electronics", "base_price": 69.99, "popularity": 0.07},
-    ]
-    
-    regions = ["North America", "Europe", "Asia Pacific", "Latin America"]
-    region_weights = [0.45, 0.30, 0.18, 0.07]
-    
-    channels = ["Web", "Mobile App", "In-Store", "Partner"]
-    channel_weights = [0.40, 0.35, 0.15, 0.10]
-    
-    # Generate 5-10 recent transactions
-    num_transactions = random.randint(5, 10)
-    rows = []
-    
-    for i in range(num_transactions):
-        product = random.choices(products, weights=[p["popularity"] for p in products])[0]
-        region = random.choices(regions, weights=region_weights)[0]
-        channel = random.choices(channels, weights=channel_weights)[0]
+    # Generate new transactions if enough time has passed (at least 1 second)
+    with _sales_lock:
+        should_update = _sales_last_update is None or (now - _sales_last_update).total_seconds() >= 1
         
-        quantity = random.choices([1, 2, 3, 4, 5], weights=[0.5, 0.25, 0.15, 0.07, 0.03])[0]
-        discount = random.choices([0, 5, 10, 15, 20], weights=[0.6, 0.15, 0.12, 0.08, 0.05])[0]
+        if should_update:
+            # If no data exists yet, generate initial batch of transactions
+            if len(_sales_history) == 0:
+                # Generate 5-10 initial transactions
+                num_initial = random.randint(5, 10)
+                for _ in range(num_initial):
+                    tx_time = now - timedelta(seconds=random.randint(0, 60))
+                    transaction = _generate_sale_transaction(tx_time)
+                    transaction["fetched_at"] = now.isoformat() + "Z"
+                    _sales_history.append(transaction)
+            else:
+                # Generate 1-3 new transactions per update
+                num_new_transactions = random.randint(1, 3)
+                for _ in range(num_new_transactions):
+                    # Spread transactions over the last second
+                    tx_time = now - timedelta(milliseconds=random.randint(0, 1000))
+                    transaction = _generate_sale_transaction(tx_time)
+                    transaction["fetched_at"] = now.isoformat() + "Z"
+                    _sales_history.append(transaction)
+            
+            _sales_last_update = now
         
-        unit_price = round(product["base_price"] * (1 - discount / 100), 2)
-        total = round(unit_price * quantity, 2)
-        
-        # Transaction time within the last minute
-        tx_time = now - timedelta(seconds=random.randint(0, 60))
-        
-        rows.append({
-            "transaction_id": f"TX{int(tx_time.timestamp() * 1000) % 1000000:06d}",
-            "timestamp": tx_time.isoformat() + "Z",
-            "product": product["name"],
-            "category": product["category"],
-            "quantity": quantity,
-            "unit_price": unit_price,
-            "discount_pct": discount,
-            "total": total,
-            "region": region,
-            "channel": channel,
-        })
+        # Return all accumulated records (up to limit)
+        rows = list(_sales_history)[-limit:]
     
-    # Sort by timestamp descending
+    # Sort by timestamp descending (most recent first)
     rows.sort(key=lambda x: x["timestamp"], reverse=True)
     
     return make_csv_response(rows)
@@ -844,81 +1194,61 @@ def get_info():
             "Use date parameters to track data from a specific point in time"
         ],
         "demo_examples": [
+            # Stock Market Data - History, Intraday, and Financials
             {
-                "id": "yfinance",
-                "url": "/api/demo-stream/yfinance?symbols=AAPL,MSFT,GOOGL",
-                "name": "Stock Data (6 months + Intraday)",
-                "refresh_seconds": 300,
-                "description": "Historical daily data (6 months default) + recent 15min intraday data + today's live prices (via yfinance)",
-                "params": {
-                    "symbols": "Comma-separated stock symbols (max 10)",
-                    "start_date": "YYYY-MM-DD start date (default: 6 months ago)"
-                }
+                "id": "stocks-history",
+                "url": "/api/demo-stream/yfinance/history?symbols=AAPL,MSFT,GOOGL,AMZN,META,NVDA",
+                "name": "📈 Yahoo Finance: 6-Month Stock Price History - Tech Companies (updates daily)",
+                "refresh_seconds": 86400,
             },
             {
-                "id": "yfinance-ytd",
-                "url": f"/api/demo-stream/yfinance?symbols=AAPL,NVDA,TSLA&start_date={datetime.utcnow().strftime('%Y')}-01-01",
-                "name": "Stock Data (Year to Date)",
-                "refresh_seconds": 300,
-                "description": "Year-to-date stock data with daily history + recent intraday (via yfinance)"
+                "id": "stocks-intraday",
+                "url": "/api/demo-stream/yfinance/recent?symbols=AAPL,MSFT,GOOGL,AMZN,META,NVDA,TSLA",
+                "name": "📈 Yahoo Finance: Recent Intraday Stock Prices - Tech Companies (updates every 15 min)",
+                "refresh_seconds": 900,
             },
             {
-                "id": "iss-trajectory",
-                "url": "/api/demo-stream/iss?minutes=30",
-                "name": "ISS Trajectory",
-                "refresh_seconds": 5,
-                "description": "ISS orbital path - positions accumulate over time",
-                "params": {
-                    "minutes": "Minutes of history (1-60, default 30)",
-                    "limit": "Max points to return (10-500)"
-                }
+                "id": "stocks-financials",
+                "url": "/api/demo-stream/yfinance/financials",
+                "name": "📈 Yahoo Finance: S&P 100 Key Financial Metrics (updates daily)",
+                "refresh_seconds": 86400,
             },
+            # ISS Tracking Variations
             {
-                "id": "earthquakes-week",
+                "id": "iss-trajectory-recent",
+                "url": "/api/demo-stream/iss",
+                "name": "🛰️ Open Notify: International Space Station Real-time Positions (updates every 30 sec)",
+                "refresh_seconds": 30,
+            },
+            
+            # Earthquake Data Variations
+            {
+                "id": "earthquakes-significant-week",
                 "url": "/api/demo-stream/earthquakes?timeframe=week&min_magnitude=4",
-                "name": "Earthquakes (Week, M4+)",
+                "name": "🌍 USGS: Significant Earthquakes Worldwide - Last Week (updates every minute)",
                 "refresh_seconds": 60,
-                "description": "Significant earthquakes - new quakes appear over time",
-                "params": {
-                    "timeframe": "hour, day, week, month",
-                    "min_magnitude": "Minimum magnitude filter",
-                    "max_magnitude": "Maximum magnitude filter (optional)",
-                    "since": "ISO datetime - only quakes after this time",
-                    "limit": "Max results (1-20000, default 20000)",
-                    "use_query_api": "true to use query API for large datasets (default false)"
-                }
+            },
+
+            # Weather Data Variations
+            {
+                "id": "weather-today-all-cities",
+                "url": "/api/demo-stream/weather/today",
+                "name": "🌤️ Open Meteo: Today's Weather - 20 Major US Cities (updates daily)",
+                "refresh_seconds": 86400,
             },
             {
-                "id": "earthquakes-large",
-                "url": "/api/demo-stream/earthquakes?timeframe=month&min_magnitude=2&use_query_api=true&limit=10000",
-                "name": "Earthquakes (Month, Large Dataset)",
-                "refresh_seconds": 300,
-                "description": "Large dataset with up to 10,000 earthquakes from the past month"
-            },
-            {
-                "id": "weather-history",
-                "url": "/api/demo-stream/weather/history?city=Seattle&days=7",
-                "name": "Weather History (7 days)",
+                "id": "weather-forecast-hourly",
+                "url": "/api/demo-stream/weather/forecast?days=3&hourly=true",
+                "name": "🌤️ Open Meteo: 3-Day Hourly Weather Forecast - US Cities (updates hourly)",
                 "refresh_seconds": 3600,
-                "description": "Hourly weather data - new hours appear over time",
-                "params": {
-                    "city": "City name (Seattle, New York, etc.)",
-                    "days": "Past days to include (1-14)"
-                }
             },
+            
+            # Live Sales & E-commerce Variations
             {
-                "id": "live-sales",
+                "id": "live-sales-feed",
                 "url": "/api/demo-stream/live-sales",
-                "name": "Live Sales Feed",
-                "refresh_seconds": 1,
-                "description": "Simulated e-commerce transactions"
-            },
-            {
-                "id": "weather-current",
-                "url": "/api/demo-stream/weather",
-                "name": "Weather (Current)",
-                "refresh_seconds": 300,
-                "description": "Current conditions for 8 US cities"
+                "name": "💰 Simulated: Live E-commerce Sales Feed (updates every 5 seconds)",
+                "refresh_seconds": 5,
             }
         ],
         "usage": "Click any example to load it, or enter a custom URL. Set auto-refresh to watch data change over time."

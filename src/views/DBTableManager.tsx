@@ -44,6 +44,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import TableRowsIcon from '@mui/icons-material/TableRows';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
+import StreamIcon from '@mui/icons-material/Stream';
 
 import { getUrls, fetchWithSession } from '../app/utils';
 import { CustomReactTable } from './ReactTable';
@@ -186,10 +187,7 @@ export const DBManagerPane: React.FC<{
     const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const dataLoaderConnectParams = useSelector((state: DataFormulatorState) => state.dataLoaderConnectParams);
 
-    
-    // Support both controlled and uncontrolled modes
-    const [tableAnalysisMap, setTableAnalysisMap] = useState<Record<string, ColumnStatistics[] | null>>({});
-    
+
     // maps data loader type to list of param defs
     const [dataLoaderMetadata, setDataLoaderMetadata] = useState<Record<string, {
         params: {name: string, default: string, type: string, required: boolean, description: string}[], 
@@ -209,12 +207,12 @@ export const DBManagerPane: React.FC<{
     
     // Watch/auto-refresh settings for the currently selected table
     const [watchEnabled, setWatchEnabled] = useState<boolean>(false);
-    const [watchInterval, setWatchInterval] = useState<number>(60);
+    const [watchInterval, setWatchInterval] = useState<number>(600);
     
     // Reset watch settings when selected table changes
     useEffect(() => {
         setWatchEnabled(false);
-        setWatchInterval(60);
+        setWatchInterval(600);
     }, [selectedTabKey]);
     
     // Helper to format interval for display
@@ -420,40 +418,6 @@ export const DBManagerPane: React.FC<{
             setSystemMessage('Failed to delete table, please check if the server is running', "error");
         }
     };
-
-    // Handle data analysis - auto-fetch when table is selected
-    const handleAnalyzeData = useCallback(async (tableName: string) => {
-        if (!tableName) return;
-        if (tableAnalysisMap[tableName]) return;
-
-        try {
-            const response = await fetchWithSession(getUrls().GET_COLUMN_STATS, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ table_name: tableName })
-            }, dispatch);
-            const data = await response.json();
-            if (data.status === 'success') {
-                // Update the analysis map with the new results
-                setTableAnalysisMap(prevMap => ({
-                    ...prevMap,
-                    [tableName]: data.statistics
-                }));
-            }
-        } catch (error) {
-            console.error('Failed to analyze table data:', error);
-            // Don't show error message for auto-fetch, just fail silently
-        }
-    }, [tableAnalysisMap]);
-
-    // Auto-fetch stats when a table is selected
-    useEffect(() => {
-        if (selectedTabKey && selectedDataLoader === "") {
-            handleAnalyzeData(selectedTabKey);
-        }
-    }, [selectedTabKey, selectedDataLoader, handleAnalyzeData]);
 
     const handleAddTableToDF = (dbTable: DBTable, refreshSettings?: {autoRefresh: boolean, refreshIntervalSeconds: number}) => {
         const convertSqlTypeToAppType = (sqlType: string): Type => {
@@ -933,8 +897,6 @@ export const DBManagerPane: React.FC<{
             if (selectedTabKey !== t.name) return null;
             
             const currentTable = t;
-            const columnStats = tableAnalysisMap[currentTable.name] ?? [];
-            const statsMap = new Map(columnStats.map((stat: ColumnStatistics) => [stat.column, stat]));
             
             return (
                 <Box key={t.name} sx={{ maxWidth: '100%', overflowX: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -957,87 +919,33 @@ export const DBManagerPane: React.FC<{
                             </IconButton>
                         </Tooltip>
                     </Box>
-                    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 1 }}>
-                        <Box sx={{ position: 'relative' }}>
-                            <TableContainer sx={{ maxHeight: 340, overflow: 'auto' }}>
-                                <Table stickyHeader aria-label="sticky table" size="small">
-                                    <TableHead>
-                                        <TableRow>
-                                            {currentTable.columns.map((col) => {
-                                                const stat = statsMap.get(col.name);
-                                                return (
-                                                    <TableCell
-                                                        key={col.name}
-                                                        sx={{
-                                                            minWidth: 80,
-                                                            fontSize: 10,
-                                                            color: "#333",
-                                                            backgroundColor: '#fff',
-                                                            borderBottomColor: theme.palette.primary.main,
-                                                            borderBottomWidth: '1px',
-                                                            borderBottomStyle: 'solid',
-                                                            padding: '4px 6px',
-                                                            verticalAlign: 'top'
-                                                        }}
-                                                    >
-                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                                            <Typography sx={{ fontSize: 11, fontWeight: 600, lineHeight: 1.2 }}>
-                                                                {col.name}
-                                                            </Typography>
-                                                            {stat ? (
-                                                                <Typography sx={{ fontSize: 9, color: 'text.secondary', lineHeight: 1.2 }}>
-                                                                    {stat.type}
-                                                                </Typography>
-                                                            ) : (
-                                                                <Typography sx={{ fontSize: 9, color: 'text.disabled', lineHeight: 1.2, fontStyle: 'italic' }}>
-                                                                    {col.type}
-                                                                </Typography>
-                                                            )}
-                                                        </Box>
-                                                    </TableCell>
-                                                );
-                                            })}
-                                        </TableRow>
-                                    </TableHead>
-                                    <TableBody>
-                                        {currentTable.sample_rows.slice(0, 9).map((row: any, rowIdx: number) => (
-                                            <TableRow 
-                                                hover 
-                                                tabIndex={-1} 
-                                                key={rowIdx} 
-                                                sx={{ background: rowIdx % 2 == 0 ? '#F0F0F0' : "none" }}
-                                            >
-                                                {currentTable.columns.map((col) => {
-                                                    const value = row[col.name];
-                                                    return (
-                                                        <TableCell
-                                                            key={col.name}
-                                                            sx={{
-                                                                fontSize: 10,
-                                                                maxWidth: "80px",
-                                                                padding: "6px",
-                                                                overflow: "clip",
-                                                                textOverflow: "ellipsis",
-                                                                whiteSpace: "nowrap"
-                                                            }}
-                                                        >
-                                                            {String(value ?? '')}
-                                                        </TableCell>
-                                                    );
-                                                })}
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </TableContainer>
-                            {currentTable.row_count > 10 && (
-                                <Box sx={{ px: 1, py: 0.5}}>
-                                    <Typography variant="caption" sx={{ fontSize: 9, color: 'text.secondary', fontStyle: 'italic' }}>
-                                        Showing first 9 rows of {currentTable.row_count} total rows
-                                    </Typography>
-                                </Box>
-                            )}
-                        </Box>
+                    <Box sx={{ }}>
+                        <Card variant="outlined" sx={{ position: 'relative' }}>
+                            <CustomReactTable
+                                rows={currentTable.sample_rows.slice(0, 9).map((row: any) => {
+                                    return Object.fromEntries(
+                                        currentTable.columns.map((col) => [col.name, String(row[col.name] ?? '')])
+                                    );
+                                })}
+                                columnDefs={currentTable.columns.map((col) => ({
+                                    id: col.name,
+                                    label: col.name,
+                                    minWidth: 80
+                                }))}
+                                rowsPerPageNum={-1}
+                                compact={false}
+                                maxCellWidth={80}
+                                isIncompleteTable={currentTable.row_count > 10}
+                                maxHeight={340}
+                            />
+                        </Card>
+                        {currentTable.row_count > 10 && (
+                            <Box sx={{ px: 1, py: 0.5}}>
+                                <Typography variant="caption" sx={{ fontSize: 9, color: 'text.secondary', fontStyle: 'italic' }}>
+                                    Showing first 9 rows of {currentTable.row_count} total rows
+                                </Typography>
+                            </Box>
+                        )}
                     </Box>
                     {tables.some(t => t.id === currentTable.name) ? (
                         <Box 
@@ -1057,58 +965,64 @@ export const DBManagerPane: React.FC<{
                             </Typography>
                         </Box>
                     ) : (
-                        <Box sx={{ ml: 2, display: 'flex', flexDirection: 'row', gap: 1 }}>
+                        <Box sx={{  display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 1, mt: 2 }}>
                             {/* Watch settings - only show for tables that can be refreshed */}
                             {currentTable.source_metadata && (
-                                <Box sx={{ display: 'flex', gap: 1 }}>
-                                    <FormControlLabel
-                                        control={
-                                            <Switch
-                                                checked={watchEnabled}
-                                                onChange={(e) => setWatchEnabled(e.target.checked)}
-                                                size="small"
-                                            />
-                                        }
-                                        label={
-                                            <Typography variant="body2" sx={{ fontSize: 12 }}>
-                                                Watch for updates
-                                            </Typography>
-                                        }
-                                        sx={{ mr: 0 }}
-                                    />
-                                    {watchEnabled && (
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 100 }}>
-                                            <Typography variant="body2" sx={{ fontSize: 11, color: 'text.secondary' }}>
-                                                every
-                                            </Typography>
-                                            <TextField
-                                                select
-                                                size="small"
-                                                value={watchInterval}
-                                                onChange={(e) => setWatchInterval(Number(e.target.value))}
-                                                sx={{ 
-                                                    minWidth: 70,
-                                                    '& .MuiInputBase-root': { fontSize: 11, height: 28 },
-                                                    '& .MuiSelect-select': { py: 0.5 }
-                                                }}
-                                            >
-                                                <MenuItem value={1}>1s</MenuItem>
-                                                <MenuItem value={10}>10s</MenuItem>
-                                                <MenuItem value={30}>30s</MenuItem>
-                                                <MenuItem value={60}>1m</MenuItem>
-                                                <MenuItem value={300}>5m</MenuItem>
-                                                <MenuItem value={600}>10m</MenuItem>
-                                                <MenuItem value={1800}>30m</MenuItem>
-                                                <MenuItem value={3600}>1h</MenuItem>
-                                            </TextField>
-                                        </Box>
-                                    )}
-                                </Box>
+                                <Paper variant="outlined" sx={{ px: 2, py: 1, borderRadius: 1 }}>
+                                    <Box sx={{ display: 'flex', flexDirection: 'row', gap: 1, alignItems: 'center', height: 24 }}>
+                                        <FormControlLabel
+                                            control={
+                                                <Switch
+                                                    checked={watchEnabled}
+                                                    onChange={(e) => setWatchEnabled(e.target.checked)}
+                                                    size="small"
+                                                />
+                                            }
+                                            label={
+                                                <Typography component="span" variant="body2" sx={{ fontWeight: 500 }}>
+                                                    Watch Mode
+                                                </Typography>
+                                            }
+                                        />
+                                        {watchEnabled ? (
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, }}>
+                                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>
+                                                    check for updates every
+                                                </Typography>
+                                                {[
+                                                    { seconds: 10, label: '10s' },
+                                                    { seconds: 30, label: '30s' },
+                                                    { seconds: 60, label: '1m' },
+                                                    { seconds: 300, label: '5m' },
+                                                    { seconds: 600, label: '10m' },
+                                                    { seconds: 1800, label: '30m' },
+                                                    { seconds: 3600, label: '1h' },
+                                                    { seconds: 86400, label: '24h' },
+                                                ].map((opt) => (
+                                                    <Chip
+                                                        key={opt.seconds}
+                                                        label={opt.label}
+                                                        size="small"
+                                                        variant={watchInterval === opt.seconds ? 'filled' : 'outlined'}
+                                                        color={watchInterval === opt.seconds ? 'primary' : 'default'}
+                                                        onClick={() => setWatchInterval(opt.seconds)}
+                                                        sx={{ 
+                                                            cursor: 'pointer', 
+                                                            fontSize: '0.7rem',
+                                                            height: 24,
+                                                        }}
+                                                    />
+                                                ))}
+                                            </Box>
+                                        ) : <Typography component="span" variant="caption" color="text.secondary">
+                                            automatically check and refresh data from the database at regular intervals
+                                        </Typography>}
+                                    </Box>
+                                </Paper>
                             )}
                             <Button 
                                 variant="contained"
-                                size="small"
-                                sx={{ textTransform: 'none', ml: 'auto' }}
+                                sx={{ textTransform: 'none', ml: 'auto'}}
                                 disabled={isUploading || dbTables.length === 0 || dbTables.find(t => t.name === selectedTabKey) === undefined}
                                 onClick={() => {
                                     let t = dbTables.find(t => t.name === selectedTabKey);
@@ -1119,7 +1033,7 @@ export const DBManagerPane: React.FC<{
                                         } : undefined);
                                     }
                                 }}>
-                                Load {watchEnabled? 'Streaming' : ''} Table {watchEnabled && currentTable.source_metadata ? `(watching every ${formatInterval(watchInterval)})` : ''}
+                                Load {watchEnabled? 'Live' : ''} Table
                             </Button>
                         </Box>
                     )}
