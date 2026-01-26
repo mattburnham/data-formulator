@@ -16,20 +16,16 @@ import {
     Tab,
     LinearProgress,
     Input,
-    Alert,
-    Tooltip,
     Link,
     alpha,
     useTheme,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import { useDispatch, useSelector } from 'react-redux';
-import { AppDispatch } from '../app/store';
-import { DataFormulatorState, dfActions, dfSelectors, fetchFieldSemanticType } from '../app/dfSlice';
+import { useSelector } from 'react-redux';
+import { DataFormulatorState } from '../app/dfSlice';
 import { DictTable } from '../components/ComponentType';
-import { createTableFromFromObjectArray, createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
-import { getUrls } from '../app/utils';
+import { createTableFromText, loadTextDataWrapper, loadBinaryDataWrapper } from '../data/utils';
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -66,7 +62,6 @@ export const RefreshDataDialog: React.FC<RefreshDataDialogProps> = ({
     onRefreshComplete,
 }) => {
     const theme = useTheme();
-    const dispatch = useDispatch<AppDispatch>();
     const [tabValue, setTabValue] = useState(0);
     const [pasteContent, setPasteContent] = useState('');
     const [urlContent, setUrlContent] = useState('');

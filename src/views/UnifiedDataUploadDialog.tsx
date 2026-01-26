@@ -473,7 +473,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
 
     // Paste tab state
     const [pasteContent, setPasteContent] = useState<string>("");
-    const [displayContent, setDisplayContent] = useState<string>("");
     const [isLargeContent, setIsLargeContent] = useState<boolean>(false);
     const [showFullContent, setShowFullContent] = useState<boolean>(false);
     const [isOverSizeLimit, setIsOverSizeLimit] = useState<boolean>(false);
@@ -595,7 +594,6 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
     const handleClose = useCallback(() => {
         // Reset state when closing
         setPasteContent("");
-        setDisplayContent("");
         setIsLargeContent(false);
         setIsOverSizeLimit(false);
         setShowFullContent(false);
@@ -753,27 +751,15 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
         const isLarge = newContent.length > LARGE_CONTENT_THRESHOLD;
         setIsLargeContent(isLarge);
         
-        if (isLarge && !showFullContent) {
-            const lines = newContent.split('\n');
-            const previewLines = lines.slice(0, MAX_DISPLAY_LINES);
-            const preview = previewLines.join('\n') + (lines.length > MAX_DISPLAY_LINES ? '\n... (truncated for performance)' : '');
-            setDisplayContent(preview);
-        } else {
-            setDisplayContent(newContent);
+        // If switching from large to small content, ensure full content is shown
+        if (!isLarge) {
+            setShowFullContent(true);
         }
-    }, [showFullContent, MAX_CONTENT_SIZE]);
+    }, []);
 
     const toggleFullContent = useCallback(() => {
         setShowFullContent(!showFullContent);
-        if (!showFullContent) {
-            setDisplayContent(pasteContent);
-        } else {
-            const lines = pasteContent.split('\n');
-            const previewLines = lines.slice(0, MAX_DISPLAY_LINES);
-            const preview = previewLines.join('\n') + (lines.length > MAX_DISPLAY_LINES ? '\n... (truncated for performance)' : '');
-            setDisplayContent(preview);
-        }
-    }, [showFullContent, pasteContent]);
+    }, [showFullContent]);
 
     const handlePasteSubmit = (): void => {
         let table: undefined | DictTable = undefined;
@@ -1401,9 +1387,12 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                 autoFocus
                                 multiline
                                 fullWidth
-                                value={displayContent}
+                                value={pasteContent}
                                 onChange={handleContentChange}
                                 placeholder="Paste your data here (CSV, TSV, or JSON format)"
+                                InputProps={{
+                                    readOnly: isLargeContent && !showFullContent,
+                                }}
                                 sx={{
                                     flex: hasPasteContent ? 1 : 'none',
                                     '& .MuiInputBase-root': {
@@ -1415,9 +1404,27 @@ export const UnifiedDataUploadDialog: React.FC<UnifiedDataUploadDialogProps> = (
                                         fontFamily: 'monospace',
                                         height: hasPasteContent ? '100% !important' : 'auto !important',
                                         overflow: 'auto !important',
+                                    },
+                                    '& .MuiInputBase-input[readonly]': {
+                                        cursor: 'not-allowed',
                                     }
                                 }}
                             />
+                            {/* Show preview indicator when in preview mode */}
+                            {isLargeContent && !showFullContent && (
+                                <Box sx={{ 
+                                    mt: 0.5, 
+                                    px: 1, 
+                                    py: 0.5, 
+                                    backgroundColor: alpha(theme.palette.info.main, 0.08),
+                                    borderRadius: 0.5,
+                                    border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`
+                                }}>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                                        Preview mode: Editing disabled. Click "Show Full" to enable editing.
+                                    </Typography>
+                                </Box>
+                            )}
                         </Box>
 
                         <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>

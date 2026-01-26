@@ -395,11 +395,9 @@ export const ReportView: FC = () => {
         affectedTableIds.forEach(tableId => {
             const table = tables.find(t => t.id === tableId);
             if (table) {
-                // Create a signature for the table data
-                const rowCount = table.rows.length;
-                const firstRows = JSON.stringify(table.rows.slice(0, 3));
-                const lastRows = JSON.stringify(table.rows.slice(-2));
-                const signature = `${rowCount}:${firstRows}:${lastRows}`;
+                // Use contentHash if available (set by state management), otherwise fallback to lightweight rowCount
+                // This avoids expensive JSON.stringify operations on every table change during streaming updates
+                const signature = table.contentHash || `${table.rows.length}`;
                 
                 const prevSignature = tableRowSignaturesRef.current.get(tableId);
                 if (prevSignature && prevSignature !== signature) {
@@ -411,7 +409,6 @@ export const ReportView: FC = () => {
         
         // If data changed, regenerate chart images for the report
         if (hasChanges) {
-            console.log('[ReportView] Table data changed, refreshing chart images...');
             
             reportChartIds.forEach(chartId => {
                 const chart = charts.find(c => c.id === chartId);
