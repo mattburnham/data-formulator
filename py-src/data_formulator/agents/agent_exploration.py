@@ -6,7 +6,7 @@ import logging
 import base64
 
 from data_formulator.agents.agent_utils import extract_json_objects, generate_data_summary
-from data_formulator.agents.agent_sql_data_transform import get_sql_table_statistics_str, sanitize_table_name
+from data_formulator.agents.agent_sql_data_transform import generate_sql_data_summary
 
 logger = logging.getLogger(__name__)
 
@@ -151,11 +151,7 @@ class ExplorationAgent(object):
 
     def get_data_summary(self, input_tables):
         if self.db_conn:
-            data_summary = ""
-            for table in input_tables:
-                table_name = sanitize_table_name(table['name'])
-                table_summary_str = get_sql_table_statistics_str(self.db_conn, table_name)
-                data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
+            data_summary = generate_sql_data_summary(self.db_conn, input_tables)
         else:
             data_summary = generate_data_summary(input_tables)
         return data_summary

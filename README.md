@@ -32,6 +32,10 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 
 
 ## News 🔥🔥🔥
+[01-25-2025] **Data Formulator 0.6** — Explore live data with real-time insights
+-  ⚡ **Connect to live data**: Connect to URLs and databases with automatic refresh intervals. Visualizations update automatically as your data changes to provide you live insights. [Example: Stock market data from Yahoo Finance](https://github.com/microsoft/data-formulator/pull/200#issue-3635408217)
+-  🎨 **UI Updates**: Directly drag-and-drop fields from the data table to update visualization designs.
+
 [12-08-2025] **Data Formulator 0.5.1** — Connect more, visualize more, move faster
 - 🔌 **Community data loaders**: Google BigQuery, MySQL, Postgres, MongoDB
 - 📊 **New chart types**: US Map & Pie Chart (more to be added soon)

@@ -28,6 +28,7 @@ import chartIconCustomArea from '../assets/chart-icon-custom-area-min.png';
 import chartIconPie from '../assets/chart-icon-pie-min.png';
 import chartIconUSMap from '../assets/chart-icon-us-map-min.png';
 import chartIconPyramid from '../assets/chart-icon-pyramid-min.png';
+import chartIconWorldMap from '../assets/chart-icon-world-map-min.png';
 
 // Chart Icon Component using static imports
 const ChartIcon: React.FC<{ src: string; alt?: string }> = ({ src, alt = "" }) => {
@@ -45,6 +46,69 @@ export const getChartChannels = (chartType: string) => {
 export const CHANNEL_LIST =  ["x", "y", "x2", "y2", "id", "color", "opacity", "size", "shape", "column", 
                               "row", "latitude", "longitude", "theta", "radius", "detail", "group",
                               "field 1", "field 2", "field 3", "field 4", "field 5", 'field 6'] as const;
+
+/**
+ * Ensures one axis (x or y) is nominal based on the spec and data cardinality.
+ * If neither axis is nominal, converts the one with lower cardinality to nominal.
+ * Returns "x" or "y" indicating which channel is nominal, or null if undetermined.
+ */
+const ensureNominalAxis = (vgSpec: any, table: any[], defaultToX: boolean = true): "x" | "y" | null => {
+    if (vgSpec.encoding.x?.type === "nominal") {
+        return "x";
+    } else if (vgSpec.encoding.y?.type === "nominal") {
+        return "y";
+    } else if (vgSpec.encoding.x && vgSpec.encoding.y) {
+        // Neither are nominal, determine based on cardinality
+        if (table && table.length > 0) {
+            const xField = vgSpec.encoding.x?.field;
+            const yField = vgSpec.encoding.y?.field;
+            
+            let xCardinality = Infinity;
+            let yCardinality = Infinity;
+            
+            if (xField) {
+                const xValues = [...new Set(table.map(r => r[xField]))];
+                xCardinality = xValues.length;
+            }
+            
+            if (yField) {
+                const yValues = [...new Set(table.map(r => r[yField]))];
+                yCardinality = yValues.length;
+            }
+            
+            // The axis with lower cardinality should be nominal (categories)
+            if (xCardinality <= yCardinality) {
+                vgSpec.encoding.x.type = "nominal";
+                return "x";
+            } else {
+                vgSpec.encoding.y.type = "nominal";
+                return "y";
+            }
+        } else {
+            // Default based on parameter
+            if (defaultToX) {
+                vgSpec.encoding.x.type = "nominal";
+                return "x";
+            } else {
+                vgSpec.encoding.y.type = "nominal";
+                return "y";
+            }
+        }
+    } else if (vgSpec.encoding.x) {
+        // Only x is defined
+        if (vgSpec.encoding.x.type !== "nominal") {
+            vgSpec.encoding.x.type = "nominal";
+        }
+        return "x";
+    } else if (vgSpec.encoding.y) {
+        // Only y is defined
+        if (vgSpec.encoding.y.type !== "nominal") {
+            vgSpec.encoding.y.type = "nominal";
+        }
+        return "y";
+    }
+    return null;
+};
 
 export const ChannelGroups = {
         "": ["x", "y", "x2", "y2", "latitude", "longitude", "id", "radius", "theta", "detail"],
@@ -174,9 +238,16 @@ const scatterPlots: ChartTemplate[] = [
         "channels": ["x", "y", "color", "opacity", "column", "row"],
         "paths": Object.fromEntries(["x", "y", "color", "opacity", "column", "row"].map(channel => [channel, ["encoding", channel]])),
         "postProcessor": (vgSpec: any,  table: any[]) => {
-            if (vgSpec.encoding.x && vgSpec.encoding.x.type != "nominal") {
-                vgSpec.encoding.x.type = "nominal";
-            } 
+            const hasX = vgSpec.encoding.x?.field;
+            const hasY = vgSpec.encoding.y?.field;
+            
+            // If only one axis is defined, show a helpful message
+            if (hasX && hasY) {
+                // Both axes defined - determine which should be nominal
+                // Vertical boxplot: x is nominal, y is quantitative
+                // Horizontal boxplot: y is nominal, x is quantitative
+                ensureNominalAxis(vgSpec, table, true);
+            }
             return vgSpec;
         }
     }
@@ -205,7 +276,6 @@ const barCharts: ChartTemplate[] = [
         "icon": <ChartIcon src={chartIconPyramid} />,
         "template": {
             "spacing": 0,
-            
             "resolve": {"scale": {"y": "shared"}},
             "hconcat": [{
                 "mark": "bar",
@@ -268,9 +338,24 @@ const barCharts: ChartTemplate[] = [
         "paths": {
             "x": ["encoding", "x"],
             "y": ["encoding", "y"],
-            "color": [["encoding", "xOffset"], ["encoding", "color"]],
+            "color": [["encoding", "color"]],
             "column": ["encoding", "column"],
             "row": ["encoding", "row"]
+        },
+        "postProcessor": (vgSpec: any, table: any[]) => {
+            if (!vgSpec.encoding.color?.field) return vgSpec;
+            
+            const nominalChannel = ensureNominalAxis(vgSpec, table, true);
+            const offsetChannel = nominalChannel === "x" ? "xOffset" : nominalChannel === "y" ? "yOffset" : null;
+            
+            if (nominalChannel && offsetChannel) {
+                if (!vgSpec.encoding[offsetChannel]) {
+                    vgSpec.encoding[offsetChannel] = {};
+                }
+                vgSpec.encoding[offsetChannel].field = vgSpec.encoding.color.field;
+                vgSpec.encoding[offsetChannel].type = "nominal";
+            }
+            return vgSpec;
         }
     },
     {
@@ -329,7 +414,7 @@ const barCharts: ChartTemplate[] = [
 
 const mapCharts: ChartTemplate[] = [
     {
-        "chart": "US Map with Points",
+        "chart": "US Map",
         "icon": <ChartIcon src={chartIconUSMap} />,
         "template": {
             "width": 500,
@@ -355,6 +440,52 @@ const mapCharts: ChartTemplate[] = [
                 {
                     "projection": {
                         "type": "albersUsa"
+                    },
+                    "mark": "circle",
+                    "encoding": {
+                        "longitude": { },
+                        "latitude": { },
+                        "size": {},
+                        "color": {}
+                    }
+                }
+            ]
+        },
+        "channels": ["longitude", "latitude", "color", "size"],
+        "paths": {
+            "longitude": ["layer", 1, "encoding", "longitude"],
+            "latitude": ["layer", 1, "encoding", "latitude"],
+            "color": ["layer", 1, "encoding", "color"],
+            "size": ["layer", 1, "encoding", "size"]
+        }
+    },
+    {
+        "chart": "World Map",
+        "icon": <ChartIcon src={chartIconWorldMap} />,
+        "template": {
+            "width": 600,
+            "height": 350,
+            "layer": [
+                {
+                    "data": {
+                        "url": "https://vega.github.io/vega-lite/data/world-110m.json",
+                        "format": {
+                            "type": "topojson",
+                            "feature": "countries"
+                        }
+                    },
+                    "projection": {
+                        "type": "equalEarth"
+                    },
+                    "mark": {
+                        "type": "geoshape",
+                        "fill": "lightgray",
+                        "stroke": "white"
+                    }
+                },
+                {
+                    "projection": {
+                        "type": "equalEarth"
                     },
                     "mark": "circle",
                     "encoding": {

@@ -50,7 +50,11 @@ def list_tables():
             for table_metadata in table_metadata_list:
                 [database_name, schema_name, table_name, is_current_schema, object_type] = table_metadata
                 table_name = table_name if is_current_schema else '.'.join([database_name, schema_name, table_name])
+                
+                # Skip system databases and internal metadata tables
                 if database_name in ['system', 'temp']:
+                    continue
+                if table_name.startswith('_df_'):  # Internal Data Formulator metadata tables
                     continue
                 
                 try:
@@ -69,12 +73,20 @@ def list_tables():
                         # If the query fails, assume it's a regular table
                         view_source = None
                     
+                    # Get source metadata if available (for refreshable tables)
+                    source_metadata = None
+                    try:
+                        source_metadata = get_table_metadata(db, table_name)
+                    except Exception:
+                        pass  # Metadata table may not exist yet
+                    
                     result.append({
                         "name": table_name,
                         "columns": [{"name": col[0], "type": col[1]} for col in columns],
                         "row_count": row_count,
                         "sample_rows": json.loads(sample_rows.to_json(orient='records', date_format='iso')),
-                        "view_source": view_source
+                        "view_source": view_source,
+                        "source_metadata": source_metadata
                     })
                     
                 except Exception as e:
@@ -749,6 +761,158 @@ def data_loader_list_tables():
         }), status_code
 
 
+def ensure_table_metadata_table(db_conn):
+    """
+    Ensure the _df_table_source_metadata table exists for storing table source information.
+    This stores connection info so backend can refresh tables - frontend manages timing/toggle.
+    """
+    db_conn.execute("""
+        CREATE TABLE IF NOT EXISTS _df_table_source_metadata (
+            table_name VARCHAR PRIMARY KEY,
+            data_loader_type VARCHAR,
+            data_loader_params JSON,
+            source_table_name VARCHAR,
+            source_query VARCHAR,
+            last_refreshed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            content_hash VARCHAR
+        )
+    """)
+    
+    # Add content_hash column if it doesn't exist (for existing databases)
+    try:
+        db_conn.execute("""
+            ALTER TABLE _df_table_source_metadata ADD COLUMN content_hash VARCHAR
+        """)
+    except Exception:
+        # Column already exists
+        pass
+
+
+def compute_table_content_hash(db_conn, table_name: str) -> str:
+    """
+    Compute a content hash for a table using DuckDB's built-in hash function.
+    Uses a sampling strategy for efficiency with large tables:
+    - Row count
+    - Column names
+    - First 50 rows, last 50 rows, and 50 sampled rows from middle
+    """
+    import hashlib
+    
+    # Get row count
+    row_count = db_conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+    
+    # Get column names
+    columns = db_conn.execute(f"DESCRIBE {table_name}").fetchall()
+    column_names = [col[0] for col in columns]
+    
+    # Build hash components
+    hash_parts = [
+        f"count:{row_count}",
+        f"cols:{','.join(column_names)}"
+    ]
+    
+    if row_count > 0:
+        # Sample rows for hashing
+        # First 50 rows
+        first_rows = db_conn.execute(f"""
+            SELECT * FROM {table_name} LIMIT 50
+        """).fetchall()
+        
+        # Last 50 rows (using row number)
+        last_rows = db_conn.execute(f"""
+            SELECT * FROM (
+                SELECT *, ROW_NUMBER() OVER () as _rn FROM {table_name}
+            ) WHERE _rn > {max(0, row_count - 50)}
+        """).fetchall()
+        
+        # Middle sample (every Nth row to get ~50 rows)
+        if row_count > 100:
+            step = max(1, (row_count - 100) // 50)
+            middle_rows = db_conn.execute(f"""
+                SELECT * FROM (
+                    SELECT *, ROW_NUMBER() OVER () as _rn FROM {table_name}
+                ) WHERE _rn > 50 AND _rn <= {row_count - 50} AND (_rn - 50) % {step} = 0
+                LIMIT 50
+            """).fetchall()
+        else:
+            middle_rows = []
+        
+        # Convert rows to strings for hashing
+        all_sample_rows = first_rows + middle_rows + last_rows
+        row_strs = [str(row) for row in all_sample_rows]
+        hash_parts.append(f"rows:{';'.join(row_strs)}")
+    
+    # Compute hash
+    content_str = '|'.join(hash_parts)
+    return hashlib.md5(content_str.encode()).hexdigest()
+
+
+def save_table_metadata(db_conn, table_name: str, data_loader_type: str, data_loader_params: dict, 
+                        source_table_name: str = None, source_query: str = None, content_hash: str = None):
+    """Save or update table source metadata"""
+    ensure_table_metadata_table(db_conn)
+    
+    # Remove sensitive fields from params before storing
+    safe_params = {k: v for k, v in data_loader_params.items() if k not in ['password', 'api_key', 'secret']}
+    
+    # Compute content hash if not provided
+    if content_hash is None:
+        try:
+            content_hash = compute_table_content_hash(db_conn, table_name)
+        except Exception as e:
+            logger.warning(f"Failed to compute content hash for {table_name}: {e}")
+            content_hash = None
+    
+    db_conn.execute("""
+        INSERT OR REPLACE INTO _df_table_source_metadata 
+        (table_name, data_loader_type, data_loader_params, source_table_name, source_query, last_refreshed, content_hash)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+    """, [table_name, data_loader_type, json.dumps(safe_params), source_table_name, source_query, content_hash])
+
+
+def get_table_metadata(db_conn, table_name: str) -> dict:
+    """Get metadata for a specific table (connection info for refresh)"""
+    ensure_table_metadata_table(db_conn)
+    
+    result = db_conn.execute("""
+        SELECT table_name, data_loader_type, data_loader_params, source_table_name, source_query, last_refreshed, content_hash
+        FROM _df_table_source_metadata 
+        WHERE table_name = ?
+    """, [table_name]).fetchone()
+    
+    if result:
+        return {
+            "table_name": result[0],
+            "data_loader_type": result[1],
+            "data_loader_params": json.loads(result[2]) if result[2] else {},
+            "source_table_name": result[3],
+            "source_query": result[4],
+            "last_refreshed": str(result[5]) if result[5] else None,
+            "content_hash": result[6]
+        }
+    return None
+
+
+def get_all_table_metadata(db_conn) -> list:
+    """Get metadata for all tables"""
+    ensure_table_metadata_table(db_conn)
+    
+    results = db_conn.execute("""
+        SELECT table_name, data_loader_type, data_loader_params, source_table_name, source_query, last_refreshed, content_hash
+        FROM _df_table_source_metadata
+    """).fetchall()
+    
+    return [{
+        "table_name": r[0],
+        "data_loader_type": r[1],
+        "data_loader_params": json.loads(r[2]) if r[2] else {},
+        "source_table_name": r[3],
+        "source_query": r[4],
+        "last_refreshed": str(r[5]) if r[5] else None,
+        "content_hash": r[6]
+    } for r in results]
+
+
 @tables_bp.route('/data-loader/ingest-data', methods=['POST'])
 def data_loader_ingest_data():
     """Ingest data from a data loader"""
@@ -758,17 +922,36 @@ def data_loader_ingest_data():
         data_loader_type = data.get('data_loader_type')
         data_loader_params = data.get('data_loader_params')
         table_name = data.get('table_name')
+        import_options = data.get('import_options', {})
+        
+        # Extract import options
+        row_limit = import_options.get('row_limit', 1000000) if import_options else 1000000
+        sort_columns = import_options.get('sort_columns', None) if import_options else None
+        sort_order = import_options.get('sort_order', 'asc') if import_options else 'asc'
 
         if data_loader_type not in DATA_LOADERS:
             return jsonify({"status": "error", "message": f"Invalid data loader type. Must be one of: {', '.join(DATA_LOADERS.keys())}"}), 400
 
         with db_manager.connection(session['session_id']) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
-            data_loader.ingest_data(table_name)
+            data_loader.ingest_data(table_name, size=row_limit, sort_columns=sort_columns, sort_order=sort_order)
+            
+            # Get the actual table name that was created (may be sanitized)
+            sanitized_name = table_name.split('.')[-1]  # Base name
+            
+            # Store metadata for refresh capability (include import options for future refresh)
+            save_table_metadata(
+                duck_db_conn, 
+                sanitized_name, 
+                data_loader_type, 
+                data_loader_params, 
+                source_table_name=table_name
+            )
 
             return jsonify({
                 "status": "success",
-                "message": "Successfully ingested data from data loader"
+                "message": "Successfully ingested data from data loader",
+                "table_name": sanitized_name
             })
 
     except Exception as e:
@@ -829,10 +1012,20 @@ def data_loader_ingest_data_from_query():
         with db_manager.connection(session['session_id']) as duck_db_conn:
             data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
             data_loader.ingest_data_from_query(query, name_as)
+            
+            # Store metadata for refresh capability
+            save_table_metadata(
+                duck_db_conn, 
+                name_as, 
+                data_loader_type, 
+                data_loader_params, 
+                source_query=query
+            )
 
             return jsonify({
                 "status": "success",
-                "message": "Successfully ingested data from data loader"
+                "message": "Successfully ingested data from data loader",
+                "table_name": name_as
             })
 
     except Exception as e:
@@ -840,5 +1033,227 @@ def data_loader_ingest_data_from_query():
         safe_msg, status_code = sanitize_db_error_message(e)
         return jsonify({
             "status": "error", 
+            "message": safe_msg
+        }), status_code
+
+
+@tables_bp.route('/data-loader/refresh-table', methods=['POST'])
+def data_loader_refresh_table():
+    """
+    Refresh a table by re-importing data from its original source.
+    Requires the table to have been imported via a data loader with stored metadata.
+    Returns content_hash and data_changed flag so frontend can skip resampling if data unchanged.
+    """
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+        # Allow passing updated connection params (e.g., for password that wasn't stored)
+        updated_params = data.get('data_loader_params', {})
+
+        if not table_name:
+            return jsonify({"status": "error", "message": "table_name is required"}), 400
+
+        with db_manager.connection(session['session_id']) as duck_db_conn:
+            # Get stored metadata
+            metadata = get_table_metadata(duck_db_conn, table_name)
+            
+            if not metadata:
+                return jsonify({
+                    "status": "error", 
+                    "message": f"No source metadata found for table '{table_name}'. Cannot refresh."
+                }), 400
+            
+            # Get old content hash before refresh
+            old_content_hash = metadata.get('content_hash')
+            
+            data_loader_type = metadata['data_loader_type']
+            data_loader_params = {**metadata['data_loader_params'], **updated_params}
+            
+            if data_loader_type not in DATA_LOADERS:
+                return jsonify({
+                    "status": "error", 
+                    "message": f"Unknown data loader type: {data_loader_type}"
+                }), 400
+            
+            # Create data loader and refresh
+            data_loader = DATA_LOADERS[data_loader_type](data_loader_params, duck_db_conn)
+            
+            if metadata['source_query']:
+                # Refresh from query
+                data_loader.ingest_data_from_query(metadata['source_query'], table_name)
+            elif metadata['source_table_name']:
+                # Refresh from table
+                data_loader.ingest_data(metadata['source_table_name'], name_as=table_name)
+            else:
+                return jsonify({
+                    "status": "error", 
+                    "message": "No source table or query found in metadata"
+                }), 400
+            
+            # Compute new content hash after refresh
+            new_content_hash = compute_table_content_hash(duck_db_conn, table_name)
+            data_changed = old_content_hash != new_content_hash
+            
+            # Update last_refreshed timestamp and content_hash
+            duck_db_conn.execute("""
+                UPDATE _df_table_source_metadata 
+                SET last_refreshed = CURRENT_TIMESTAMP, content_hash = ?
+                WHERE table_name = ?
+            """, [new_content_hash, table_name])
+            
+            # Get updated row count
+            row_count = duck_db_conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+
+            return jsonify({
+                "status": "success",
+                "message": f"Successfully refreshed table '{table_name}'",
+                "row_count": row_count,
+                "content_hash": new_content_hash,
+                "data_changed": data_changed
+            })
+
+    except Exception as e:
+        logger.error(f"Error refreshing table: {str(e)}")
+        logger.error(traceback.format_exc())
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error", 
+            "message": safe_msg
+        }), status_code
+
+
+@tables_bp.route('/data-loader/get-table-metadata', methods=['POST'])
+def data_loader_get_table_metadata():
+    """Get source metadata for a specific table"""
+    try:
+        data = request.get_json()
+        table_name = data.get('table_name')
+
+        if not table_name:
+            return jsonify({"status": "error", "message": "table_name is required"}), 400
+
+        with db_manager.connection(session['session_id']) as duck_db_conn:
+            metadata = get_table_metadata(duck_db_conn, table_name)
+            
+            if metadata:
+                return jsonify({
+                    "status": "success",
+                    "metadata": metadata
+                })
+            else:
+                return jsonify({
+                    "status": "success",
+                    "metadata": None,
+                    "message": f"No metadata found for table '{table_name}'"
+                })
+
+    except Exception as e:
+        logger.error(f"Error getting table metadata: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error", 
+            "message": safe_msg
+        }), status_code
+
+
+@tables_bp.route('/data-loader/list-table-metadata', methods=['GET'])
+def data_loader_list_table_metadata():
+    """Get source metadata for all tables"""
+    try:
+        with db_manager.connection(session['session_id']) as duck_db_conn:
+            metadata_list = get_all_table_metadata(duck_db_conn)
+            
+            return jsonify({
+                "status": "success",
+                "metadata": metadata_list
+            })
+
+    except Exception as e:
+        logger.error(f"Error listing table metadata: {str(e)}")
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error", 
+            "message": safe_msg
+        }), status_code
+
+
+@tables_bp.route('/refresh-derived-data', methods=['POST'])
+def refresh_derived_data():
+    """
+    Re-run Python transformation code with new input data to refresh a derived table.
+    
+    This endpoint takes:
+    - input_tables: list of {name: string, rows: list} objects representing the parent tables
+    - code: the Python transformation code to execute
+    
+    Returns:
+    - status: 'ok' or 'error'
+    - rows: the resulting rows if successful
+    - message: error message if failed
+    """
+    try:
+        from data_formulator.py_sandbox import run_transform_in_sandbox2020
+        from flask import current_app
+        
+        data = request.get_json()
+        input_tables = data.get('input_tables', [])
+        code = data.get('code', '')
+        
+        if not input_tables:
+            return jsonify({
+                "status": "error",
+                "message": "No input tables provided"
+            }), 400
+            
+        if not code:
+            return jsonify({
+                "status": "error", 
+                "message": "No transformation code provided"
+            }), 400
+        
+        # Convert input tables to pandas DataFrames
+        df_list = []
+        for table in input_tables:
+            table_name = table.get('name', '')
+            table_rows = table.get('rows', [])
+            
+            if not table_rows:
+                return jsonify({
+                    "status": "error",
+                    "message": f"Table '{table_name}' has no rows"
+                }), 400
+                
+            df = pd.DataFrame.from_records(table_rows)
+            df_list.append(df)
+        
+        # Get exec_python_in_subprocess setting from app config
+        exec_python_in_subprocess = current_app.config.get('CLI_ARGS', {}).get('exec_python_in_subprocess', False)
+        
+        # Run the transformation code
+        result = run_transform_in_sandbox2020(code, df_list, exec_python_in_subprocess)
+        
+        if result['status'] == 'ok':
+            result_df = result['content']
+            
+            # Convert result DataFrame to list of records
+            rows = json.loads(result_df.to_json(orient='records', date_format='iso'))
+            
+            return jsonify({
+                "status": "ok",
+                "rows": rows,
+                "message": "Successfully refreshed derived data"
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": result.get('content', 'Unknown error during transformation')
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Error refreshing derived data: {str(e)}")
+        logger.error(traceback.format_exc())
+        safe_msg, status_code = sanitize_db_error_message(e)
+        return jsonify({
+            "status": "error",
             "message": safe_msg
         }), status_code

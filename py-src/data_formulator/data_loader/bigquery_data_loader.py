@@ -204,7 +204,7 @@ Supported Operations:
 
         return df
 
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
             """Ingest data from BigQuery table into DuckDB with stable, de-duplicated column aliases."""
             if name_as is None:
                 name_as = table_name.split('.')[-1]
@@ -272,7 +272,15 @@ Supported Operations:
             if not select_parts:
                 raise ValueError(f"No fields found for table {table_name}")
 
-            query = f"SELECT {', '.join(select_parts)} FROM `{table_name}` LIMIT {size}"
+            # Build ORDER BY clause if sort_columns are specified
+            order_by_clause = ""
+            if sort_columns and len(sort_columns) > 0:
+                # Use backticks for BigQuery column quoting
+                order_direction = "DESC" if sort_order == 'desc' else "ASC"
+                sanitized_cols = [f'`{col}` {order_direction}' for col in sort_columns]
+                order_by_clause = f"ORDER BY {', '.join(sanitized_cols)}"
+
+            query = f"SELECT {', '.join(select_parts)} FROM `{table_name}` {order_by_clause} LIMIT {size}"
 
             df = self.client.query(query).to_dataframe()
 

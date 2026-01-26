@@ -34,6 +34,9 @@ Concretely, you should first refine users' goal and then create a python functio
             - if you mention column names from the input or the output data, highlight the text in **bold**.
                 * the column can either be a column in the input data, or a new column that will be computed in the output data.
                 * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
+        - determine "input_tables", the names of a subset of input tables from [CONTEXT] section that will be used to achieve the user's goal.
+            - **IMPORTANT** Note that the Table 1 in [CONTEXT] section is the table the user is currently viewing, it should take precedence if the user refers to insights about the "current table".
+            - At the same time, leverage table information to determine which tables are relevant to the user's goal and should be used.
         - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
         - then decide "chart_encodings", which maps visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized, 
             - the "chart_encodings" should be created to support the user's "chart_type".
@@ -48,7 +51,7 @@ Concretely, you should first refine users' goal and then create a python functio
                 - e.g., they may mention "use B metric instead" while A metric is in provided fields, in this case, you should update "chart_encodings" to update A metric with B metric.
         - guide on statistical analysis:
             - when the user asks for forecasting or regression analysis, you should consider the following:
-                - the output should be a long format table where actual x, y pairs and predicted x, y pairs are included in the X, Y columns, they are differentiated with a third column "is_predicted" that is a boolean field.
+                - the output should be a long format table where actual x, y pairs and predicted x, y pairs are included in the X, Y columns, they are differentiated with a third column "is_predicted".
                 - i.e., if the user ask for forecasting based on two columns T and Y, the output should be three columns: T, Y, is_predicted, where
                     - T, Y columns contain BOTH original values from the data and predicted values from the data.
                     - is_predicted is a boolean field to indicate whether the x, y pairs are original values from the data or predicted / regression values from the data.
@@ -65,6 +68,7 @@ Concretely, you should first refine users' goal and then create a python functio
 {
     "detailed_instruction": "..." // string, elaborate user instruction with details if the user
     "display_instruction": "..." // string, the short verb phrase describing the users' goal.
+    "input_tables": [...] // string[], describe names of the input tables that will be used in the transformation.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have based on the user's goal, it's a good idea to preserve intermediate fields here (i.e., the goal of transformed data)
     "chart_encodings": {
         "x": "",
@@ -79,8 +83,8 @@ Concretely, you should first refine users' goal and then create a python functio
 }
 ```
 
-    2. Then, write a python function based on the refined goal, the function input is a dataframe "df" (or multiple dataframes based on tables presented in the [CONTEXT] section) and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
-The python function must follow the template provided in [TEMPLATE], do not import any other libraries or modify function name. The function should be as simple as possible and easily readable.
+    2. Then, write a python function based on the refined goal, the function input is a dataframe "df" (or multiple dataframes based on tables described in "input_tables") and the output is the transformed dataframe "transformed_df". "transformed_df" should contain all "output_fields" from the refined goal.
+The python function must follow the template provided in [TEMPLATE], only import libraries allowed in the template, do not modify function name. The function should be as simple as possible and easily readable.
 If there is no data transformation needed based on "output_fields", the transformation function can simply "return df".
 
 [TEMPLATE]
@@ -89,7 +93,7 @@ If there is no data transformation needed based on "output_fields", the transfor
 import pandas as pd
 import collections
 import numpy as np
-from sklearn import ... # import necessary libraries from sklearn if needed
+# from sklearn import ... # import from sklearn if you need it.
 
 def transform_data(df1, df2, ...): 
     # complete the template here
@@ -97,9 +101,11 @@ def transform_data(df1, df2, ...):
 ```
 
 note: 
-- if the user provided one table, then it should be `def transform_data(df1)`, if the user provided multiple tables, then it should be `def transform_data(df1, df2, ...)` and you should consider the join between tables to derive the output.
-- **VERY IMPORTANT** the number of arguments in the function must match the number of tables provided, and the order of arguments must match the order of tables provided.
-- try to use intuitive table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes, as long as the number and order of the arguments match the number and order of the tables provided.
+- decide the function signature based on the number of tables you decided in the previous step "input_tables":
+    - if you decide there will only be one input table, then function signature should be `def transform_data(df1)`
+    - if you decided there will be k input tables, then function signature should be `def transform_data(df_1, df_2, ..., df_k)`.
+    - instead of using generic names like df1, df2, ..., try to use intuitive table names for function arguments, for example, if you have input_tables: ["City", "Weather"]`, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes.
+    - **VERY IMPORTANT** the number of arguments in the function signature must be the same as the number of tables provided in "input_tables", and the order of arguments must match the order of tables provided in "input_tables".
 - datetime objects handling:
     - if the output field is year, convert it to number, if it is year-month / year-month-day, convert it to string object (e.g., "2020-01" / "2020-01-01").
     - if the output is time only: convert hour to number if it's just the hour (e.g., 10), but convert hour:min or h:m:s to string object (e.g., "10:30", "10:30:45")
@@ -202,6 +208,7 @@ df1 (weather_seattle_atlanta) sample:
 
 {  
     "detailed_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis. Color the points by which city is warmer.",  
+    "input_tables": ["weather_seattle_atlanta"],
     "output_fields": ["Date", "Seattle Temperature", "Atlanta Temperature", "Warmer City"],  
     "chart_encodings": {"x": "Seattle Temperature", "y": "Atlanta Temperature", "color": "Warmer City"},  
     "reason": "To compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis, and color points by which city is warmer, separate temperature fields for Seattle and Atlanta are required. Additionally, a new field 'Warmer City' is needed to indicate which city is warmer."  
@@ -212,7 +219,7 @@ import pandas as pd
 import collections  
 import numpy as np  
   
-def transform_data(df):  
+def transform_data(df_weather_seattle_atlanta):  
     # Pivot the dataframe to have separate columns for Seattle and Atlanta temperatures  
     df_pivot = df.pivot(index='Date', columns='City', values='Temperature').reset_index()  
     df_pivot.columns = ['Date', 'Atlanta Temperature', 'Seattle Temperature']  
@@ -260,7 +267,7 @@ class PythonDataTransformationAgent(object):
             if len(json_blocks) > 0:
                 refined_goal = json_blocks[0]
             else:
-                refined_goal = {'chart_encodings': {}, 'instruction': '', 'reason': ''}
+                refined_goal = {'chart_encodings': {}, 'instruction': '', 'reason': '', 'input_tables': []}
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
 
@@ -268,7 +275,33 @@ class PythonDataTransformationAgent(object):
                 code_str = code_blocks[-1]
 
                 try:
-                    result = py_sandbox.run_transform_in_sandbox2020(code_str, [pd.DataFrame.from_records(t['rows']) for t in input_tables], self.exec_python_in_subprocess)
+                    # Check if input_tables is available
+                    if not input_tables:
+                        result = {'status': 'error', 'code': code_str, 'content': "No input tables available."}
+                    else:
+                        # Determine which tables to use based on refined_goal
+                        if 'input_tables' in refined_goal and isinstance(refined_goal['input_tables'], list) and len(refined_goal['input_tables']) > 0:
+                            # Use only specified tables - validate all exist
+                            table_name_map = {t['name']: t for t in input_tables}
+                            tables_to_use = []
+                            missing_tables = []
+                            
+                            for table_name in refined_goal['input_tables']:
+                                if table_name in table_name_map:
+                                    tables_to_use.append(table_name_map[table_name])
+                                else:
+                                    missing_tables.append(table_name)
+                            
+                            # Error if any specified table is missing
+                            if missing_tables:
+                                available_table_names = [t['name'] for t in input_tables]
+                                result = {'status': 'error', 'code': code_str, 'content': f"Table(s) '{', '.join(missing_tables)}' specified in 'input_tables' not found. Available tables: {', '.join(available_table_names)}"}
+                            else:
+                                result = py_sandbox.run_transform_in_sandbox2020(code_str, [pd.DataFrame.from_records(t['rows']) for t in tables_to_use], self.exec_python_in_subprocess)
+                        else:
+                            # No input_tables specified in refined_goal, use all input_tables
+                            result = py_sandbox.run_transform_in_sandbox2020(code_str, [pd.DataFrame.from_records(t['rows']) for t in input_tables], self.exec_python_in_subprocess)
+                    
                     result['code'] = code_str
 
                     if result['status'] == 'ok':

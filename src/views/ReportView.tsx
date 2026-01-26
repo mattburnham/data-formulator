@@ -51,6 +51,7 @@ import { Collapse } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { convertToChartifact, openChartifactViewer } from './ChartifactDialog';
+import StreamIcon from '@mui/icons-material/Stream';
 
 // Typography constants
 const FONT_FAMILY_SYSTEM = '-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"';
@@ -231,13 +232,13 @@ export const ReportView: FC = () => {
     const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
     const [error, setError] = useState<string>('');
-    const [style, setStyle] = useState<string>('short note');
+    const [style, setStyle] = useState<string>('social post');
     const [mode, setMode] = useState<'compose' | 'post'>(allGeneratedReports.length > 0 ? 'post' : 'compose');
 
     // Local state for current report
     const [currentReportId, setCurrentReportId] = useState<string | undefined>(undefined);
     const [generatedReport, setGeneratedReport] = useState<string>('');
-    const [generatedStyle, setGeneratedStyle] = useState<string>('short note');
+    const [generatedStyle, setGeneratedStyle] = useState<string>('social post');
     const [cachedReportImages, setCachedReportImages] = useState<Record<string, { url: string; width: number; height: number }>>({});
     const [shareButtonSuccess, setShareButtonSuccess] = useState(false);
     const [hideTableOfContents, setHideTableOfContents] = useState(false);
@@ -367,6 +368,70 @@ export const ReportView: FC = () => {
             loadReport(allGeneratedReports[0].id);
         }
     }, [currentReportId]);
+
+    // Auto-refresh chart images when underlying table data changes
+    // This enables real-time chart updates in reports when data is streaming
+    const tableRowSignaturesRef = useRef<Map<string, string>>(new Map());
+    
+    useEffect(() => {
+        if (!currentReportId || mode !== 'post') return;
+        
+        const currentReport = allGeneratedReports.find(r => r.id === currentReportId);
+        if (!currentReport) return;
+        
+        // Get all tables referenced by the report's charts
+        const reportChartIds = currentReport.selectedChartIds;
+        const affectedTableIds = new Set<string>();
+        
+        reportChartIds.forEach(chartId => {
+            const chart = charts.find(c => c.id === chartId);
+            if (chart) {
+                affectedTableIds.add(chart.tableRef);
+            }
+        });
+        
+        // Check if any affected tables have changed
+        let hasChanges = false;
+        affectedTableIds.forEach(tableId => {
+            const table = tables.find(t => t.id === tableId);
+            if (table) {
+                // Create a signature for the table data
+                const rowCount = table.rows.length;
+                const firstRows = JSON.stringify(table.rows.slice(0, 3));
+                const lastRows = JSON.stringify(table.rows.slice(-2));
+                const signature = `${rowCount}:${firstRows}:${lastRows}`;
+                
+                const prevSignature = tableRowSignaturesRef.current.get(tableId);
+                if (prevSignature && prevSignature !== signature) {
+                    hasChanges = true;
+                }
+                tableRowSignaturesRef.current.set(tableId, signature);
+            }
+        });
+        
+        // If data changed, regenerate chart images for the report
+        if (hasChanges) {
+            console.log('[ReportView] Table data changed, refreshing chart images...');
+            
+            reportChartIds.forEach(chartId => {
+                const chart = charts.find(c => c.id === chartId);
+                if (!chart) return;
+                
+                const chartTable = tables.find(t => t.id === chart.tableRef);
+                if (!chartTable) return;
+                
+                if (chart.chartType === 'Table' || chart.chartType === '?') {
+                    return;
+                }
+                
+                getChartImageFromVega(chart, chartTable).then(({ blobUrl, width, height }) => {
+                    if (blobUrl) {
+                        updateCachedReportImages(chart.id, blobUrl, width, height);
+                    }
+                });
+            });
+        }
+    }, [tables, currentReportId, mode, allGeneratedReports, charts]);
 
 
     
@@ -734,7 +799,7 @@ export const ReportView: FC = () => {
                 // No reports left, clear the view and go back to compose mode
                 setCurrentReportId(undefined);
                 setGeneratedReport('');
-                setGeneratedStyle('short note');
+                setGeneratedStyle('social post');
                 setMode('compose');
             }
         }
@@ -832,7 +897,7 @@ export const ReportView: FC = () => {
                                 }}
                             >
                                 {[
-                                    { value: 'short note', label: 'short note' },
+                                    { value: 'live report', label: 'live report' },
                                     { value: 'blog post', label: 'blog post' },
                                     { value: 'social post', label: 'social post' },
                                     { value: 'executive summary', label: 'executive summary' },
@@ -848,7 +913,7 @@ export const ReportView: FC = () => {
                                             minWidth: 'auto'
                                         }}
                                     >
-                                        {option.label}
+                                        {option.value === 'live report' ? <StreamIcon sx={{ fontSize: 16, mr: 1 }} /> : <></>} {option.label}
                                     </ToggleButton>
                                 ))}
                             </ToggleButtonGroup>

@@ -26,3 +26,6 @@ let store = configureStore({
 })
 
 export default store;
+
+// Export store instance for use in utilities
+export { store };

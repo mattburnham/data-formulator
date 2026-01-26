@@ -32,8 +32,9 @@ Concretely, you should infer the appropriate data and create in the output secti
     "recap": "..." // string, a short summary of the user's goal.
     "display_instruction": "..." // string, the even shorter verb phrase describing the users' goal.
     "recommendation": "..." // string, explain why this recommendation is made
+    "input_tables": [...] // string[], describe names of the input tables that will be used in the transformation.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have (i.e., the goal of transformed data), it's a good idea to preseve intermediate fields here
-    "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar". "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
+    "chart_type": "" // string, one of "point", "bar", "line", "area", "heatmap", "group_bar", 'boxplot'. "chart_type" should either be inferred from user instruction, or recommend if the user didn't specify any.
     "chart_encodings": {
         "x": "",
         "y": "",
@@ -65,7 +66,10 @@ Concretely:
         - if you mention column names from the input or the output data, highlight the text in **bold**.
             * the column can either be a column in the input data, or a new column that will be computed in the output data.
             * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
-    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar"
+    - determine "input_tables", the names of a subset of input tables from [CONTEXT] section that will be used to achieve the user's goal.
+        - Note that the first table is the table the user is currently viewing, it should take precedence if the user asks for visualization of the "current table".
+        - At the same time, leverage table information to determine which tables are relevant to the user's goal and should be used.
+    - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot"
     - "chart_encodings" should specify which fields should be used to create the visualization
         - decide which visual channels should be used to create the visualization appropriate for the chart type.
             - point: x, y, color, size, facet
@@ -75,6 +79,7 @@ Concretely:
             - area: x, y, color, facet
             - heatmap: x, y, color, facet
             - group_bar: x, y, color, facet
+            - boxplot: x, y, color, facet
         - note that all fields used in "chart_encodings" should be included in "output_fields".
             - all fields you need for visualizations should be transformed into the output fields!
             - "output_fields" should include important intermediate fields that are not used in visualization but are used for data transformation.
@@ -108,6 +113,10 @@ Concretely:
                 - best for: Trends over time, continuous data
             - (heatmap) Heatmaps: x,y: Categorical (you need to convert quantitative to nominal), color: Quantitative intensity, 
                 - best for: Pattern discovery in matrix data
+            - (boxplot) Box plots: x: Categorical (nominal/ordinal), y: Quantitative, color: Categorical (optional for creating grouped boxplots), 
+                - best for: Distribution of a quantitative field
+                - use x values directly if x values are categorical, and transform the data into bins if the field values are quantitative.
+                - when color is specified, the boxplot will be grouped automatically (items with the same x values will be grouped).
         - facet channel is available for all chart types, it supports a categorical field with small cardinality to visualize the data in different facets.
         - if you really need additional legend fields:
             - you can use opacity for legend (support Quantitative and Categorical).
@@ -135,7 +144,7 @@ Concretely:
             
     2. Then, write a python function based on the inferred goal, the function input is a dataframe "df" (or multiple dataframes based on tables presented in the [CONTEXT] section) and the output is the transformed dataframe "transformed_df". 
 "transformed_df" should contain all "output_fields" from the refined user intent in the json object.
-The python function must follow the template provided in [TEMPLATE], do not import any other libraries or modify function name. The function should be as simple as possible and easily readable. 
+The python function must follow the template provided in [TEMPLATE]. The function should be as simple as possible and easily readable. 
 If there is no data transformation needed based on "output_fields", the transformation function can simply "return df".
 
 [TEMPLATE]
@@ -144,7 +153,7 @@ If there is no data transformation needed based on "output_fields", the transfor
 import pandas as pd
 import collections
 import numpy as np
-from sklearn import ... # import necessary libraries from sklearn if needed
+# from sklearn import ... # import from sklearn if you need it.
 
 def transform_data(df1, df2, ...): 
     # complete the template here
@@ -152,9 +161,11 @@ def transform_data(df1, df2, ...):
 ```
 
 note: 
-- if the user provided one table, then it should be `def transform_data(df1)`, if the user provided multiple tables, then it should be `def transform_data(df1, df2, ...)` and you should consider the join between tables to derive the output.
-- **VERY IMPORTANT** the number of arguments in the function must match the number of tables provided, and the order of arguments must match the order of tables provided.
-- you can use intuitive table names to refer to the input dataframes, for example, if the user provided two tables city and weather, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes, as long as the number and order of the arguments match the number and order of the tables provided.
+- decide the function signature based on the number of tables you decided in the previous step "input_tables":
+    - if you decide there will only be one input table, then function signature should be `def transform_data(df1)`
+    - if you decided there will be k input tables, then function signature should be `def transform_data(df_1, df_2, ..., df_k)`.
+    - instead of using generic names like df1, df2, ..., try to use intuitive table names for function arguments, for example, if you have input_tables: ["City", "Weather"]`, you can use `transform_data(df_city, df_weather)` to refer to the two dataframes.
+    - **VERY IMPORTANT** the number of arguments in the function signature must be the same as the number of tables provided in "input_tables", and the order of arguments must match the order of tables provided in "input_tables".
 - datetime objects handling:
     - if the output field is year, convert it to number, if it is year-month / year-month-day, convert it to string object (e.g., "2020-01" / "2020-01-01").
     - if the output is time only: convert hour to number if it's just the hour (e.g., 10), but convert hour:min or h:m:s to string object (e.g., "10:30", "10:30:45")
@@ -200,6 +211,7 @@ df1 (student_exam) sample:
     "display_instruction": "Rank students by average scores",
     "mode": "infer",
     "recommendation": "To rank students based on their average scores, we need to calculate the average score for each student, then sort the data, and finally assign a rank to each student based on their average score.",  
+    "input_tables": ["student_exam"],
     "output_fields": ["student", "major", "average_score", "rank"],  
     "chart_type": "bar",  
     "chart_encodings": {"x": "student", "y": "average_score"},  
@@ -255,7 +267,7 @@ class PythonDataRecAgent(object):
             if len(json_blocks) > 0:
                 refined_goal = json_blocks[0]
             else:
-                refined_goal = { 'mode': "", 'recommendation': "", 'output_fields': [], 'chart_encodings': {}, 'chart_type': "" }
+                refined_goal = { 'mode': "", 'recommendation': "", 'input_tables': [], 'output_fields': [], 'chart_encodings': {}, 'chart_type': "" }
 
             code_blocks = extract_code_from_gpt_response(choice.message.content + "\n", "python")
 
@@ -263,7 +275,33 @@ class PythonDataRecAgent(object):
                 code_str = code_blocks[-1]
 
                 try:
-                    result = py_sandbox.run_transform_in_sandbox2020(code_str, [pd.DataFrame.from_records(t['rows']) for t in input_tables], self.exec_python_in_subprocess)
+                    # Check if input_tables is available
+                    if not input_tables:
+                        result = {'status': 'error', 'code': code_str, 'content': "No input tables available."}
+                    else:
+                        # Determine which tables to use based on refined_goal
+                        if 'input_tables' in refined_goal and isinstance(refined_goal['input_tables'], list) and len(refined_goal['input_tables']) > 0:
+                            # Use only specified tables - validate all exist
+                            table_name_map = {t['name']: t for t in input_tables}
+                            tables_to_use = []
+                            missing_tables = []
+                            
+                            for table_name in refined_goal['input_tables']:
+                                if table_name in table_name_map:
+                                    tables_to_use.append(table_name_map[table_name])
+                                else:
+                                    missing_tables.append(table_name)
+                            
+                            # Error if any specified table is missing
+                            if missing_tables:
+                                available_table_names = [t['name'] for t in input_tables]
+                                result = {'status': 'error', 'code': code_str, 'content': f"Table(s) '{', '.join(missing_tables)}' specified in 'input_tables' not found. Available tables: {', '.join(available_table_names)}"}
+                            else:
+                                result = py_sandbox.run_transform_in_sandbox2020(code_str, [pd.DataFrame.from_records(t['rows']) for t in tables_to_use], self.exec_python_in_subprocess)
+                        else:
+                            # No input_tables specified in refined_goal, use all input_tables
+                            result = py_sandbox.run_transform_in_sandbox2020(code_str, [pd.DataFrame.from_records(t['rows']) for t in input_tables], self.exec_python_in_subprocess)
+                    
                     result['code'] = code_str
 
                     if result['status'] == 'ok':

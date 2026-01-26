@@ -173,7 +173,12 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     
     const dispatch = useDispatch<AppDispatch>();
 
-    const interleaveArrays: any = (a: any[], b: any[], spaceElement?: any) => a.length ? [a[0], spaceElement || '',...interleaveArrays(b, a.slice(1), spaceElement)] : b;
+    const interleaveArrays: any = (a: any[], b: any[], spaceElement?: any): any[] => {
+        if (a.length === 0) return b;
+        // Filter out null/undefined and empty strings to avoid key warnings
+        const result = [a[0], ...interleaveArrays(b, a.slice(1), spaceElement)];
+        return result.filter(x => x !== null && x !== undefined && x !== '');
+    };
 
     let previousInstructions : any = ""
 
@@ -199,7 +204,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
             return null;
         }
         return buildTableCard(tableId);
-    });
+    }).filter(x => x !== null);
 
     let leafTable = tables.find(t => t.id == activeTableThread[activeTableThread.length - 1]) as DictTable;
 
@@ -237,7 +242,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
     previousInstructions = truncated ? 
         <Box  sx={{padding: '4px 0px', display: 'flex', flexDirection: "column" }}>
             {tableList[0]}
-            <Box sx={{height: '24px', borderLeft: '1px dashed darkgray', 
+            <Box key="truncated-indicator" sx={{height: '24px', borderLeft: '1px dashed darkgray', 
                 position: 'relative',
                 ml: '8px', display: 'flex', alignItems: 'center', cursor: 'pointer',
                 '&:hover': {
@@ -266,7 +271,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
         let leafUserCharts = allCharts.filter(c => c.tableRef == resultTable.id).filter(c => c.source == "user");
 
         let endChartCards = leafUserCharts.map((c) => {
-            return <Card variant="outlined" className={"hover-card"} 
+            return <Card key={`end-chart-${c.id}`} variant="outlined" className={"hover-card"} 
                             onClick={() => { 
                                 dispatch(dfActions.setFocusedChart(c.id));
                                 dispatch(dfActions.setFocusedTable(c.tableRef));
@@ -283,7 +288,7 @@ export const EncodingShelfThread: FC<EncodingShelfThreadProps> = function ({ cha
                                         backgroundSize: '1px 6px, 3px 100%'}}></Box>
             </Box>
             {buildTableCard(resultTable.id)}
-            <Box key="post-instruction" sx={{width: '17px', height: '12px'}}>
+            <Box key="post-instruction-2" sx={{width: '17px', height: '12px'}}>
                 <Box sx={{padding:0, width: '1px', margin:'auto', height: '100%',
                                         backgroundImage: 'linear-gradient(180deg, darkgray, darkgray 75%, transparent 75%, transparent 100%)',
                                         backgroundSize: '1px 6px, 3px 100%'}}></Box>

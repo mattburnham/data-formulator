@@ -74,7 +74,7 @@ export const FreeDataViewFC: FC<FreeDataViewProps> = function DataView() {
                 ? nameSegments.reduce((max, segment) => Math.max(max, segment.length), 0)
                 : name.length;
             const contentLength = Math.max(maxNameSegmentLength, avgLength);
-            const minWidth = Math.max(60, contentLength * 8 > 200 ? 200 : contentLength * 8) + 50; // 8px per character with 50px padding
+            const minWidth = Math.max(60, contentLength * 8 > 240 ? 240 : contentLength * 8) + 50; // 8px per character with 50px padding
             const width = minWidth;
             
             return { minWidth, width };

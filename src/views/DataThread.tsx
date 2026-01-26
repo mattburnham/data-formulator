@@ -22,7 +22,11 @@ import {
     Popper,
     Paper,
     ClickAwayListener,
-    Badge
+    Badge,
+    Menu,
+    MenuItem,
+    Switch,
+    FormControlLabel,
 } from '@mui/material';
 
 import { VegaLite } from 'react-vega'
@@ -61,10 +65,18 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloudQueueIcon from '@mui/icons-material/CloudQueue';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import StreamIcon from '@mui/icons-material/Stream';
 
 import { alpha } from '@mui/material/styles';
 
 import { dfSelectors } from '../app/dfSlice';
+import { RefreshDataDialog } from './RefreshDataDialog';
+import { getUrls } from '../app/utils';
+import { AppDispatch } from '../app/store';
+import StopIcon from '@mui/icons-material/Stop';
+import { useDataRefresh } from '../app/useDataRefresh';
 
 export const ThinkingBanner = (message: string, sx?: SxProps) => (
     <Box sx={{ 
@@ -110,6 +122,170 @@ export const ThinkingBanner = (message: string, sx?: SxProps) => (
     </Box>
 );
 
+
+// Streaming Settings Popup Component
+const StreamingSettingsPopup = memo<{
+    open: boolean;
+    anchorEl: HTMLElement | null;
+    onClose: () => void;
+    table: DictTable;
+    onUpdateSettings: (autoRefresh: boolean, refreshIntervalSeconds?: number) => void;
+    onRefreshNow?: () => void;
+}>(({ open, anchorEl, onClose, table, onUpdateSettings, onRefreshNow }) => {
+    const [refreshInterval, setRefreshInterval] = useState<number>(
+        table.source?.refreshIntervalSeconds || 60
+    );
+    const [autoRefresh, setAutoRefresh] = useState<boolean>(
+        table.source?.autoRefresh || false
+    );
+    const [selectMenuOpen, setSelectMenuOpen] = useState<boolean>(false);
+    const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+    useEffect(() => {
+        if (open) {
+            setRefreshInterval(table.source?.refreshIntervalSeconds || 60);
+            setAutoRefresh(table.source?.autoRefresh || false);
+        }
+    }, [open, table.source]);
+
+    const handleAutoRefreshChange = (enabled: boolean) => {
+        setAutoRefresh(enabled);
+        onUpdateSettings(enabled, enabled ? refreshInterval : undefined);
+        if (!enabled) {
+            onClose();
+        }
+    };
+
+    const handleIntervalChange = (interval: number) => {
+        setRefreshInterval(interval);
+        if (autoRefresh) {
+            onUpdateSettings(true, interval);
+        }
+    };
+
+    const handleRefreshNow = async () => {
+        if (onRefreshNow && !isRefreshing) {
+            setIsRefreshing(true);
+            try {
+                await onRefreshNow();
+            } finally {
+                setIsRefreshing(false);
+            }
+        }
+    };
+
+    const handleClickAway = (event: MouseEvent | TouchEvent) => {
+        // Don't close if the select menu is open
+        if (selectMenuOpen) {
+            return;
+        }
+        // Don't close if clicking on the select menu or menu items
+        const target = event.target as HTMLElement;
+        if (
+            target.closest('.MuiMenu-root') ||
+            target.closest('.MuiPaper-root')?.classList.contains('MuiMenu-paper') ||
+            target.closest('[role="menuitem"]') ||
+            target.closest('[role="listbox"]')
+        ) {
+            return;
+        }
+        onClose();
+    };
+
+    return (
+        <Popper
+            open={open}
+            anchorEl={anchorEl}
+            placement="bottom-start"
+            style={{ zIndex: 1300 }}
+        >
+            <ClickAwayListener onClickAway={handleClickAway} mouseEvent="onMouseDown">
+                <Paper
+                    elevation={8}
+                    sx={{
+                        fontSize: 12,
+                        p: 1.5,
+                        mt: 1,
+                        border: '1px solid',
+                        borderColor: 'divider'
+                    }}
+                >
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'nowrap' }}>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={autoRefresh}
+                                        onChange={(e) => handleAutoRefreshChange(e.target.checked)}
+                                        size="small"
+                                    />
+                                }
+                                label={
+                                    <Typography variant="body2" sx={{ fontSize: 11 }}>
+                                        Watch for updates
+                                    </Typography>
+                                }
+                                sx={{ mr: 0 }}
+                            />
+                            {autoRefresh && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 100 }}>
+                                    <Typography variant="body2" sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                        every
+                                    </Typography>
+                                    <TextField
+                                        select
+                                        size="small"
+                                        value={refreshInterval}
+                                        onChange={(e) => handleIntervalChange(Number(e.target.value))}
+                                        slotProps={{
+                                            select: {
+                                                open: selectMenuOpen,
+                                                onOpen: () => setSelectMenuOpen(true),
+                                                onClose: () => setSelectMenuOpen(false)
+                                            }
+                                        }}
+                                        sx={{ 
+                                            minWidth: 70,
+                                            '& .MuiInputBase-root': { fontSize: 11, height: 28 },
+                                            '& .MuiSelect-select': { py: 0.5 }
+                                        }}
+                                    >
+                                        <MenuItem value={1}>1s</MenuItem>
+                                        <MenuItem value={10}>10s</MenuItem>
+                                        <MenuItem value={30}>30s</MenuItem>
+                                        <MenuItem value={60}>1m</MenuItem>
+                                        <MenuItem value={300}>5m</MenuItem>
+                                        <MenuItem value={600}>10m</MenuItem>
+                                        <MenuItem value={1800}>30m</MenuItem>
+                                        <MenuItem value={3600}>1h</MenuItem>
+                                        <MenuItem value={86400}>24h</MenuItem>
+                                    </TextField>
+                                </Box>
+                            )}
+                            {onRefreshNow && (
+                                <Button
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={handleRefreshNow}
+                                    disabled={isRefreshing}
+                                    startIcon={isRefreshing ? <CircularProgress size={14} /> : <RefreshIcon sx={{ fontSize: 14 }} />}
+                                    sx={{
+                                        fontSize: 11,
+                                        textTransform: 'none',
+                                        height: 28,
+                                        alignSelf: 'flex-start'
+                                    }}
+                                >
+                                    Refresh now
+                                </Button>
+                            )}
+                        </Box>
+                    </Box>
+                </Paper>
+            </ClickAwayListener>
+        </Popper>
+    );
+});
 
 // Metadata Popup Component
 const MetadataPopup = memo<{
@@ -458,12 +634,62 @@ const EditableTableName: FC<{
     );
 };
 
+// Compact view for thread0 - displays table cards with charts in a simple grid
+// Reuses SingleThreadGroupView with compact mode
+let CompactThread0View: FC<{
+    scrollRef: any,
+    leafTables: DictTable[];
+    chartElements: { tableId: string, chartId: string, element: any }[];
+    sx?: SxProps
+}> = function ({
+    scrollRef,
+    leafTables,
+    chartElements,
+    sx
+}) {
+    const theme = useTheme();
+    
+    return (
+        <Box sx={{ ...sx, 
+            '& .selected-card': { 
+                border: `2px solid ${theme.palette.primary.light}`,
+            },
+            transition: "box-shadow 0.1s linear",
+        }}
+        data-thread-index={-1}>
+            <Box sx={{ display: 'flex', direction: 'ltr', margin: '2px 2px 8px 2px' }}>
+                <Divider flexItem sx={{
+                    margin: 'auto',
+                    "& .MuiDivider-wrapper": { display: 'flex', flexDirection: 'row' },
+                    "&::before, &::after": { borderColor: alpha(theme.palette.custom.main, 0.2), borderWidth: '2px', width: 60 },
+                }}>
+                    <Typography sx={{ fontSize: "10px",  color: 'text.secondary', textTransform: 'none' }}>
+                        workspace
+                    </Typography>
+                </Divider>
+            </Box>
+            <Box sx={{ padding: '2px 4px 2px 4px', marginTop: 0, direction: 'ltr' }}>
+                <SingleThreadGroupView
+                    scrollRef={scrollRef}
+                    threadIdx={-1}
+                    leafTables={leafTables}
+                    chartElements={chartElements}
+                    usedIntermediateTableIds={[]}
+                    compact={true}
+                    sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}
+                />
+            </Box>
+        </Box>
+    );
+}
+
 let SingleThreadGroupView: FC<{
     scrollRef: any,
     threadIdx: number,
     leafTables: DictTable[];
     chartElements: { tableId: string, chartId: string, element: any }[];
     usedIntermediateTableIds: string[],
+    compact?: boolean, // When true, only show table cards in a simple column (for thread0)
     sx?: SxProps
 }> = function ({
     scrollRef,
@@ -471,10 +697,12 @@ let SingleThreadGroupView: FC<{
     leafTables,
     chartElements,
     usedIntermediateTableIds, // tables that have been used
+    compact = false,
     sx
 }) {
 
     let tables = useSelector((state: DataFormulatorState) => state.tables);
+    const { manualRefresh } = useDataRefresh();
 
     let leafTableIds = leafTables.map(lt => lt.id);
     let parentTableId = leafTables[0].derive?.trigger.tableId || undefined;
@@ -490,6 +718,19 @@ let SingleThreadGroupView: FC<{
     const [selectedTableForMetadata, setSelectedTableForMetadata] = useState<DictTable | null>(null);
     const [metadataAnchorEl, setMetadataAnchorEl] = useState<HTMLElement | null>(null);
 
+    // Table menu state
+    const [tableMenuAnchorEl, setTableMenuAnchorEl] = useState<HTMLElement | null>(null);
+    const [selectedTableForMenu, setSelectedTableForMenu] = useState<DictTable | null>(null);
+
+    // Refresh data dialog state
+    const [refreshDialogOpen, setRefreshDialogOpen] = useState(false);
+    const [selectedTableForRefresh, setSelectedTableForRefresh] = useState<DictTable | null>(null);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    // Streaming settings popup state
+    const [streamingSettingsPopupOpen, setStreamingSettingsPopupOpen] = useState(false);
+    const [selectedTableForStreamingSettings, setSelectedTableForStreamingSettings] = useState<DictTable | null>(null);
+    const [streamingSettingsAnchorEl, setStreamingSettingsAnchorEl] = useState<HTMLElement | null>(null);
 
     let handleUpdateTableDisplayId = (tableId: string, displayId: string) => {
         dispatch(dfActions.updateTableDisplayId({
@@ -519,6 +760,150 @@ let SingleThreadGroupView: FC<{
         }
     };
 
+    // Table menu handlers
+    const handleOpenTableMenu = (table: DictTable, anchorEl: HTMLElement) => {
+        setSelectedTableForMenu(table);
+        setTableMenuAnchorEl(anchorEl);
+    };
+
+    const handleCloseTableMenu = () => {
+        setTableMenuAnchorEl(null);
+        setSelectedTableForMenu(null);
+    };
+
+    // Refresh data handlers
+    const handleOpenRefreshDialog = (table: DictTable) => {
+        setSelectedTableForRefresh(table);
+        setRefreshDialogOpen(true);
+        handleCloseTableMenu();
+    };
+
+    const handleCloseRefreshDialog = () => {
+        setRefreshDialogOpen(false);
+        setSelectedTableForRefresh(null);
+    };
+
+    // Streaming settings handlers
+    const handleOpenStreamingSettingsPopup = (table: DictTable, anchorEl: HTMLElement) => {
+        setSelectedTableForStreamingSettings(table);
+        setStreamingSettingsAnchorEl(anchorEl);
+        setStreamingSettingsPopupOpen(true);
+    };
+
+    const handleCloseStreamingSettingsPopup = () => {
+        setStreamingSettingsPopupOpen(false);
+        setSelectedTableForStreamingSettings(null);
+        setStreamingSettingsAnchorEl(null);
+    };
+
+    const handleUpdateStreamingSettings = (autoRefresh: boolean, refreshIntervalSeconds?: number) => {
+        if (selectedTableForStreamingSettings) {
+            dispatch(dfActions.updateTableSourceRefreshSettings({
+                tableId: selectedTableForStreamingSettings.id,
+                autoRefresh,
+                refreshIntervalSeconds
+            }));
+        }
+    };
+
+    // Function to refresh derived tables
+    const refreshDerivedTables = async (sourceTableId: string, newRows: any[]) => {
+        // Find all tables that are derived from this source table
+        const derivedTables = tables.filter(t => t.derive?.source?.includes(sourceTableId));
+        
+        for (const derivedTable of derivedTables) {
+            if (derivedTable.derive && derivedTable.derive.code) {
+                // Gather all parent tables for this derived table
+                const parentTableData = derivedTable.derive.source.map(sourceId => {
+                    const sourceTable = tables.find(t => t.id === sourceId);
+                    if (sourceTable) {
+                        // Use the new rows if this is the table being refreshed
+                        const rows = sourceId === sourceTableId ? newRows : sourceTable.rows;
+                        return {
+                            name: sourceTable.id,
+                            rows: rows
+                        };
+                    }
+                    return null;
+                }).filter(t => t !== null);
+
+                if (parentTableData.length > 0) {
+                    try {
+                        const response = await fetch(getUrls().REFRESH_DERIVED_DATA, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                input_tables: parentTableData,
+                                code: derivedTable.derive.code
+                            })
+                        });
+
+                        const result = await response.json();
+                        if (result.status === 'ok' && result.rows) {
+                            // Update the derived table with new rows
+                            dispatch(dfActions.updateTableRows({
+                                tableId: derivedTable.id,
+                                rows: result.rows
+                            }));
+
+                            // Recursively refresh tables derived from this one
+                            await refreshDerivedTables(derivedTable.id, result.rows);
+                        } else {
+                            console.error(`Failed to refresh derived table ${derivedTable.id}:`, result.message);
+                            dispatch(dfActions.addMessages({
+                                timestamp: Date.now(),
+                                type: 'error',
+                                component: 'data refresh',
+                                value: `Failed to refresh derived table "${derivedTable.displayId || derivedTable.id}": ${result.message || 'Unknown error'}`
+                            }));
+                        }
+                    } catch (error) {
+                        console.error(`Error refreshing derived table ${derivedTable.id}:`, error);
+                        dispatch(dfActions.addMessages({
+                            timestamp: Date.now(),
+                            type: 'error',
+                            component: 'data refresh',
+                            value: `Error refreshing derived table "${derivedTable.displayId || derivedTable.id}"`
+                        }));
+                    }
+                }
+            }
+        }
+    };
+
+    const handleRefreshComplete = async (newRows: any[]) => {
+        if (!selectedTableForRefresh) return;
+
+        setIsRefreshing(true);
+        try {
+            // Update the source table with new rows
+            dispatch(dfActions.updateTableRows({
+                tableId: selectedTableForRefresh.id,
+                rows: newRows
+            }));
+
+            // Refresh all derived tables
+            await refreshDerivedTables(selectedTableForRefresh.id, newRows);
+
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'success',
+                component: 'data refresh',
+                value: `Successfully refreshed data for "${selectedTableForRefresh.displayId || selectedTableForRefresh.id}" and updated derived tables.`
+            }));
+        } catch (error) {
+            console.error('Error during refresh:', error);
+            dispatch(dfActions.addMessages({
+                timestamp: Date.now(),
+                type: 'error',
+                component: 'data refresh',
+                value: `Error refreshing data: ${error}`
+            }));
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
+
     let buildTriggerCard = (trigger: Trigger) => {
         let selectedClassName = trigger.chart?.id == focusedChartId ? 'selected-card' : '';
         
@@ -543,7 +928,7 @@ let SingleThreadGroupView: FC<{
         </Box>;
     }
 
-    let buildTableCard = (tableId: string) => {
+    let buildTableCard = (tableId: string, compact = false) => {
 
         if (parentTable && tableId == parentTable.id && parentTable.anchored && tableIdList.length > 1) {
             let table = tables.find(t => t.id == tableId);
@@ -609,13 +994,22 @@ let SingleThreadGroupView: FC<{
         // only charts without dependency can be deleted
         let tableDeleteEnabled = !tables.some(t => t.derive?.trigger.tableId == tableId);
 
-        let tableCardIcon =  ( table?.anchored ? 
-            <AnchorIcon sx={{ 
+        const iconColor = tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.6)';
+        const iconOpacity = table?.anchored ? 1 : 0.5;
+        
+        let tableCardIcon = table?.virtual ? (
+            <CloudQueueIcon sx={{ 
                 fontSize: 16,
-                color: tableId === focusedTableId ? theme.palette.primary.main : 'rgba(0,0,0,0.5)',
-                fontWeight: tableId === focusedTableId ? 'bold' : 'normal',
-            }} /> : 
-            <TableRowsIcon sx={{ fontSize: 16 }} /> )
+                color: iconColor,
+                opacity: iconOpacity,
+            }} />
+        ) : (
+            <TableRowsIcon sx={{ 
+                fontSize: 16,
+                color: iconColor,
+                opacity: iconOpacity,
+            }} />
+        )
 
         let regularTableBox = <Box key={`regular-table-box-${tableId}`} ref={relevantCharts.some(c => c.chartId == focusedChartId) ? scrollRef : null} 
             sx={{ padding: '0px' }}>
@@ -637,27 +1031,83 @@ let SingleThreadGroupView: FC<{
                 }}>
                 <Box sx={{ margin: '0px', display: 'flex' }}>
                     <Stack direction="row" sx={{ marginLeft: 0.5, marginRight: 'auto', fontSize: 12 }} alignItems="center" gap={"2px"}>
-                        <IconButton color="primary" sx={{
-                            minWidth: 0, 
-                            padding: 0.25,
-                            '&:hover': {
-                                transform: 'scale(1.3)',
-                                transition: 'all 0.1s linear'
-                            },
-                            '&.Mui-disabled': {
-                                color: 'rgba(0, 0, 0, 0.5)'
-                            }
-                        }} 
-                        size="small" 
-                        disabled={table?.derive == undefined || tables.some(t => t.derive?.trigger.tableId == tableId)}
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
-                        }}>
-                            {tableCardIcon}
-                        </IconButton>
+                        {/* For non-derived tables: icon opens menu; for derived tables: icon toggles anchored */}
+                        {table?.derive == undefined ? (
+                            <Tooltip title="more options">
+                                <IconButton color="primary" sx={{
+                                    minWidth: 0, 
+                                    padding: 0.25,
+                                    '&:hover': {
+                                        transform: 'scale(1.3)',
+                                        transition: 'all 0.1s linear'
+                                    },
+                                }} 
+                                size="small" 
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleOpenTableMenu(table!, event.currentTarget);
+                                }}>
+                                    {tableCardIcon}
+                                </IconButton>
+                            </Tooltip>
+                        ) : (
+                            <IconButton color="primary" sx={{
+                                minWidth: 0, 
+                                padding: 0.25,
+                                '&:hover': {
+                                    transform: 'scale(1.3)',
+                                    transition: 'all 0.1s linear'
+                                },
+                                '&.Mui-disabled': {
+                                    color: 'rgba(0, 0, 0, 0.5)'
+                                }
+                            }} 
+                            size="small" 
+                            disabled={tables.some(t => t.derive?.trigger.tableId == tableId)}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                dispatch(dfActions.updateTableAnchored({tableId: tableId, anchored: !table?.anchored}));
+                            }}>
+                                {tableCardIcon}
+                            </IconButton>
+                        )}
                         <Box sx={{ margin: '4px 8px 4px 2px', display: 'flex', alignItems: 'center' }}>
-                            {table?.virtual? <CloudQueueIcon sx={{ fontSize: 10, }} /> : ""}
+                            {/* Only show streaming icon when actively watching for updates */}
+                            {(table?.source?.type === 'stream' || table?.source?.type === 'database') && table?.source?.autoRefresh ? (
+                                <Tooltip title={`Auto-refresh every ${
+                                    (table.source?.refreshIntervalSeconds || 60) < 60 
+                                        ? `${table.source?.refreshIntervalSeconds}s` 
+                                        : (table.source?.refreshIntervalSeconds || 60) < 3600 
+                                            ? `${Math.floor((table.source?.refreshIntervalSeconds || 60) / 60)}m`
+                                            : `${Math.floor((table.source?.refreshIntervalSeconds || 60) / 3600)}h`
+                                } - Click to change interval or stop watching`}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleOpenStreamingSettingsPopup(table!, event.currentTarget);
+                                        }}
+                                        sx={{
+                                            padding: 0.25,
+                                            '&:hover': {
+                                                transform: 'scale(1.2)',
+                                                transition: 'all 0.1s linear'
+                                            }
+                                        }}
+                                    >
+                                        <StreamIcon sx={{ 
+                                            fontSize: 12, 
+                                            color: theme.palette.success.main,
+                                            animation: 'pulse 2s infinite',
+                                            '@keyframes pulse': {
+                                                '0%': { opacity: 1 },
+                                                '50%': { opacity: 0.5 },
+                                                '100%': { opacity: 1 },
+                                            },
+                                        }} />
+                                    </IconButton>
+                                </Tooltip>
+                            ) : ""}
                             {focusedTableId == tableId ? <EditableTableName
                                 initialValue={table?.displayId || tableId}
                                 tableId={tableId}
@@ -666,50 +1116,15 @@ let SingleThreadGroupView: FC<{
                                 textAlign: 'center',
                                 color:  'rgba(0,0,0,0.7)', 
                                 maxWidth: '90px',
-                                ml: table?.virtual ? 0.5 : 0,
+                                ml: table?.virtual || ((table?.source?.type === 'stream' || table?.source?.type === 'database') && table?.source?.autoRefresh) ? 0.5 : 0,
                                 wordWrap: 'break-word',
                                 whiteSpace: 'normal'
                             }}>{table?.displayId || tableId}</Typography>}
                         </Box>
                     </Stack>
                     <ButtonGroup aria-label="Basic button group" variant="text" sx={{ textAlign: 'end', margin: "auto 2px auto auto" }}>
-                        {table?.derive == undefined && <Tooltip key="attach-metadata-btn-tooltip" title={table?.attachedMetadata ? "edit table metadata" : "attach table metadata"}>
-                            <IconButton aria-label="attach metadata" size="small" sx={{ 
-                                padding: 0.25, 
-                                '&:hover': {
-                                    transform: 'scale(1.2)',
-                                    transition: 'all 0.1s linear'
-                                } 
-                            }}
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleOpenMetadataPopup(table!, event.currentTarget);
-                                }}
-                            >
-                                <AttachFileIcon fontSize="small" sx={{ 
-                                    fontSize: 18,
-                                    color: table?.attachedMetadata ? 'secondary.main' : 'text.secondary',
-                                    opacity: table?.attachedMetadata ? 1 : 0.7
-                                }}/>
-                            </IconButton>
-                        </Tooltip>}
-                        
-                        {tableDeleteEnabled && <Tooltip key="delete-table-btn-tooltip" title="delete table">
-                            <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
-                                transform: 'scale(1.2)',
-                                transition: 'all 0.1s linear'
-                                } }}
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    dispatch(dfActions.deleteTable(tableId));
-                                }}
-                            >
-                                <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
-                            </IconButton>
-                        </Tooltip>}
-                        
                         <Tooltip key="create-new-chart-btn-tooltip" title="create a new chart">
-                            <IconButton aria-label="share" size="small" sx={{ padding: 0.25, '&:hover': {
+                            <IconButton aria-label="create chart" size="small" sx={{ padding: 0.25, '&:hover': {
                                 transform: 'scale(1.2)',
                                 transition: 'all 0.1s linear'
                                 } }}
@@ -722,6 +1137,23 @@ let SingleThreadGroupView: FC<{
                                 <AddchartIcon fontSize="small" sx={{ fontSize: 18 }} color='primary'/>
                             </IconButton>
                         </Tooltip>
+                        
+                        {/* Delete button - shown for all deletable tables */}
+                        {tableDeleteEnabled && (
+                            <Tooltip key="delete-table-btn-tooltip" title="delete table">
+                                <IconButton aria-label="delete" size="small" sx={{ padding: 0.25, '&:hover': {
+                                    transform: 'scale(1.2)',
+                                    transition: 'all 0.1s linear'
+                                    } }}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        dispatch(dfActions.deleteTable(tableId));
+                                    }}
+                                >
+                                    <DeleteIcon fontSize="small" sx={{ fontSize: 18 }} color='warning'/>
+                                </IconButton>
+                            </Tooltip>
+                        )}
                     </ButtonGroup>
                 </Box>
             </Card>
@@ -756,7 +1188,7 @@ let SingleThreadGroupView: FC<{
                         backgroundSize: '1px 6px, 3px 100%'
                     }}></Box>
                 </Box>}
-                <Box sx={{ flex: 1, padding: '8px 0px', minHeight: '8px', ...chartElementProps }}>
+                <Box sx={{ flex: 1, padding: '4px 0px', minHeight: '0px', ...chartElementProps }}>
                     {releventChartElements}
                     {agentActionBox}
                 </Box>
@@ -829,6 +1261,111 @@ let SingleThreadGroupView: FC<{
         </Stack>;
     });
 
+    // Compact mode: just show leaf table cards in a simple column
+    if (compact) {
+        // For compact mode, ensure highlightedTableIds includes focused table if it's a leaf
+        if (focusedTableId && leafTableIds.includes(focusedTableId)) {
+            highlightedTableIds = [focusedTableId];
+        }
+        
+        return (
+            <Box sx={{ ...sx, display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                {leafTables.map((table) => {
+                    const tableCardResult = buildTableCard(table.id, compact);
+                    // buildTableCard returns an array [regularTableBox, chartBox]
+                    // In compact mode, we want to show them stacked
+                    return (
+                        <React.Fragment key={`compact-table-${table.id}`}>
+                            {tableCardResult}
+                        </React.Fragment>
+                    );
+                })}
+                <MetadataPopup
+                    open={metadataPopupOpen}
+                    anchorEl={metadataAnchorEl}
+                    onClose={handleCloseMetadataPopup}
+                    onSave={handleSaveMetadata}
+                    initialValue={selectedTableForMetadata?.attachedMetadata || ''}
+                    tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
+                />
+                <Menu
+                    anchorEl={tableMenuAnchorEl}
+                    open={Boolean(tableMenuAnchorEl)}
+                    onClose={handleCloseTableMenu}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <MenuItem 
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (selectedTableForMenu) {
+                                handleOpenMetadataPopup(selectedTableForMenu, tableMenuAnchorEl!);
+                            }
+                            handleCloseTableMenu();
+                        }}
+                        sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                    >
+                        <AttachFileIcon sx={{ 
+                            fontSize: 16,
+                            color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
+                        }}/>
+                        {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
+                    </MenuItem>
+                    {/* Watch for updates option - only shown when table has stream/database source but not actively watching */}
+                    {selectedTableForMenu && 
+                     (selectedTableForMenu.source?.type === 'stream' || selectedTableForMenu.source?.type === 'database') && 
+                     (
+                        <MenuItem 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (selectedTableForMenu) {
+                                    handleOpenStreamingSettingsPopup(selectedTableForMenu, tableMenuAnchorEl!);
+                                }
+                                handleCloseTableMenu();
+                            }}
+                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                        >
+                            <StreamIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
+                            Watch for updates
+                        </MenuItem>
+                    )}
+                    {/* Refresh data - hidden for database tables */}
+                    {selectedTableForMenu?.source?.type !== 'database' && (
+                        <MenuItem 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (selectedTableForMenu) {
+                                    handleOpenRefreshDialog(selectedTableForMenu);
+                                }
+                            }}
+                            sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                        >
+                            <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
+                            Refresh data
+                        </MenuItem>
+                    )}
+                </Menu>
+                {selectedTableForRefresh && (
+                    <RefreshDataDialog
+                        open={refreshDialogOpen}
+                        onClose={handleCloseRefreshDialog}
+                        table={selectedTableForRefresh}
+                        onRefreshComplete={handleRefreshComplete}
+                    />
+                )}
+                {selectedTableForStreamingSettings && (
+                    <StreamingSettingsPopup
+                        open={streamingSettingsPopupOpen}
+                        anchorEl={streamingSettingsAnchorEl}
+                        onClose={handleCloseStreamingSettingsPopup}
+                        table={selectedTableForStreamingSettings}
+                        onUpdateSettings={handleUpdateStreamingSettings}
+                        onRefreshNow={() => manualRefresh(selectedTableForStreamingSettings.id)}
+                    />
+                )}
+            </Box>
+        );
+    }
+
     return <Box sx={{ ...sx, 
             '& .selected-card': { 
                 border: `2px solid ${theme.palette.primary.light}`,
@@ -843,7 +1380,7 @@ let SingleThreadGroupView: FC<{
                 "&::before, &::after": { borderColor: alpha(theme.palette.custom.main, 0.2), borderWidth: '2px', width: 60 },
             }}>
                 <Typography sx={{ fontSize: "10px",  color: 'text.secondary', textTransform: 'none' }}>
-                    {`thread - ${threadIdx + 1}`}
+                    {threadIdx === -1 ? 'thread0' : `thread - ${threadIdx + 1}`}
                 </Typography>
             </Divider>
         </Box>
@@ -888,8 +1425,102 @@ let SingleThreadGroupView: FC<{
             initialValue={selectedTableForMetadata?.attachedMetadata || ''}
             tableName={selectedTableForMetadata?.displayId || selectedTableForMetadata?.id || ''}
         />
+
+        {/* Table actions menu for non-derived, non-virtual tables */}
+        <Menu
+            anchorEl={tableMenuAnchorEl}
+            open={Boolean(tableMenuAnchorEl)}
+            onClose={handleCloseTableMenu}
+            onClick={(e) => e.stopPropagation()}
+        >
+            <MenuItem 
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (selectedTableForMenu) {
+                        handleOpenMetadataPopup(selectedTableForMenu, tableMenuAnchorEl!);
+                    }
+                    handleCloseTableMenu();
+                }}
+                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+            >
+                <AttachFileIcon sx={{ 
+                    fontSize: 16,
+                    color: selectedTableForMenu?.attachedMetadata ? 'secondary.main' : 'text.secondary',
+                }}/>
+                {selectedTableForMenu?.attachedMetadata ? "Edit metadata" : "Attach metadata"}
+            </MenuItem>
+            {/* Watch for updates option - only shown when table has stream/database source but not actively watching */}
+            {selectedTableForMenu && 
+             (selectedTableForMenu.source?.type === 'stream' || selectedTableForMenu.source?.type === 'database') && 
+             !selectedTableForMenu.source?.autoRefresh && (
+                <MenuItem 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedTableForMenu) {
+                            handleOpenStreamingSettingsPopup(selectedTableForMenu, tableMenuAnchorEl!);
+                        }
+                        handleCloseTableMenu();
+                    }}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                >
+                    <StreamIcon sx={{ fontSize: 16, color: 'text.secondary' }}/>
+                    Watch for updates
+                </MenuItem>
+            )}
+            {/* Refresh data - hidden for database tables */}
+            {selectedTableForMenu?.source?.type !== 'database' && (
+                <MenuItem 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedTableForMenu) {
+                            handleOpenRefreshDialog(selectedTableForMenu);
+                        }
+                    }}
+                    sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1 }}
+                >
+                    <RefreshIcon sx={{ fontSize: 16, color: 'primary.main' }}/>
+                    Refresh data
+                </MenuItem>
+            )}
+            <MenuItem 
+                onClick={(e) => {
+                    e.stopPropagation();
+                    if (selectedTableForMenu) {
+                        dispatch(dfActions.deleteTable(selectedTableForMenu.id));
+                    }
+                    handleCloseTableMenu();
+                }}
+                disabled={selectedTableForMenu ? tables.some(t => t.derive?.trigger.tableId === selectedTableForMenu.id) : true}
+                sx={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}
+            >
+                <DeleteIcon sx={{ fontSize: 16 }} color='warning'/>
+                Delete table
+            </MenuItem>
+        </Menu>
+
+        {/* Refresh data dialog */}
+        {selectedTableForRefresh && (
+            <RefreshDataDialog
+                open={refreshDialogOpen}
+                onClose={handleCloseRefreshDialog}
+                table={selectedTableForRefresh}
+                onRefreshComplete={handleRefreshComplete}
+            />
+        )}
+
+        {/* Streaming settings popup */}
+        {selectedTableForStreamingSettings && (
+            <StreamingSettingsPopup
+                open={streamingSettingsPopupOpen}
+                anchorEl={streamingSettingsAnchorEl}
+                onClose={handleCloseStreamingSettingsPopup}
+                table={selectedTableForStreamingSettings}
+                onUpdateSettings={handleUpdateStreamingSettings}
+                onRefreshNow={() => manualRefresh(selectedTableForStreamingSettings.id)}
+            />
+        )}
     </Box>
-}
+    }
 
 const VegaLiteChartElement = memo<{
     chart: Chart,
@@ -1179,7 +1810,22 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return aOrders.length - bOrders.length;
     });
 
-    let leafTableGroups = leafTables.reduce((groups: { [groupId: string]: DictTable[] }, leafTable) => {
+    // Identify hanging tables (tables with no descendants or parents)
+    let isHangingTable = (table: DictTable) => {
+        // A table is hanging if:
+        // 1. It has no derive.source (no parent)
+        // 2. No other table derives from it (no descendants)
+        const hasNoParent = table.derive == undefined;
+        const hasNoDescendants = !tables.some(t => t.derive?.trigger.tableId == table.id);
+        return hasNoParent && hasNoDescendants;
+    };
+
+    // Separate hanging tables from regular leaf tables
+    let hangingTables = leafTables.filter(t => isHangingTable(t));
+    let regularLeafTables = leafTables.filter(t => !isHangingTable(t));
+
+    // Build groups for regular leaf tables (excluding hanging tables)
+    let leafTableGroups = regularLeafTables.reduce((groups: { [groupId: string]: DictTable[] }, leafTable) => {
         // Get the immediate parent table ID (first trigger in the chain)
         const triggers = getTriggers(leafTable, tables);
         const immediateParentTableId = triggers.length > 0 ? triggers[triggers.length - 1].tableId : 'root';
@@ -1203,13 +1849,43 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         return groups;
     }, {});
 
-    let drawerOpen = threadDrawerOpen && leafTables.length > 1;
-    let collaposedViewWidth = Math.max(...Object.values(leafTableGroups).map(x => x.length)) > 1 ? 248 : 232
+    // Filter threads to only include those with length > 1
+    let filteredLeafTableGroups: { [groupId: string]: DictTable[] } = {};
+    Object.entries(leafTableGroups).forEach(([groupId, groupTables]) => {
+        // Calculate thread length: count all tables in the thread chain
+        const threadLength = groupTables.reduce((maxLength, leafTable) => {
+            const triggers = getTriggers(leafTable, tables);
+            // Thread length = number of triggers + 1 (the leaf table itself)
+            return Math.max(maxLength, triggers.length + 1);
+        }, 0);
+        
+        // Only include threads with length > 1
+        if (threadLength > 1) {
+            filteredLeafTableGroups[groupId] = groupTables;
+        } else {
+            // Add single-table threads to hanging tables (they go to thread0)
+            groupTables.forEach(table => {
+                if (!hangingTables.includes(table)) {
+                    hangingTables.push(table);
+                }
+            });
+        }
+    });
+
+    // Create thread0 group for hanging tables
+    let thread0Group: { [groupId: string]: DictTable[] } = {};
+    if (hangingTables.length > 0) {
+        thread0Group['thread0'] = hangingTables;
+    }
+
+    let drawerOpen = threadDrawerOpen && (Object.keys(filteredLeafTableGroups).length > 0 || hangingTables.length > 0);
+    let allGroupsForWidth = { ...filteredLeafTableGroups, ...thread0Group };
+    let collaposedViewWidth = Math.max(...Object.values(allGroupsForWidth).map(x => x.length)) > 1 ? 248 : 232
 
     let view = <Box maxWidth={drawerOpen ? 720 : collaposedViewWidth} sx={{ 
         overflow: 'auto', // Add horizontal scroll when drawer is open
         position: 'relative',
-        display: 'flex', 
+        display: drawerOpen ? '-webkit-box' : 'flex', 
         flexDirection: 'column',
         direction: 'ltr',
         height: 'calc(100% - 16px)',
@@ -1218,11 +1894,38 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         p: 1,
         transition: 'max-width 0.1s linear', // Smooth width transition
     }}>
-        {Object.entries(leafTableGroups).map(([groupId, leafTables], i) => {
-
-            let usedIntermediateTableIds = Object.values(leafTableGroups).slice(0, i).flat()
+        {/* Render thread0 (hanging tables) first if it exists - using compact view */}
+        {Object.entries(thread0Group).map(([groupId, leafTables], i) => {
+            return <CompactThread0View
+                key={`thread-${groupId}-${i}`}
+                scrollRef={scrollRef}
+                leafTables={leafTables} 
+                chartElements={chartElements} 
+                sx={{
+                    backgroundColor: 'white', 
+                    borderRadius: 2,
+                    padding: 1,
+                    my: 0.5,
+                    flex:  'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    height: 'fit-content',
+                    width: leafTables.length > 1 ? '216px' : '200px', 
+                    transition: 'all 0.3s ease',
+                }} />
+        })}
+        {/* Render regular threads (length > 1) */}
+        {Object.entries(filteredLeafTableGroups).map(([groupId, leafTables], i) => {
+            // Calculate used tables from thread0 and previous threads
+            let usedIntermediateTableIds = Object.values(thread0Group).flat()
                 .map(x => [ ...getTriggers(x, tables).map(y => y.tableId) || []]).flat();
-            let usedLeafTableIds = Object.values(leafTableGroups).slice(0, i).flat().map(x => x.id);
+            let usedLeafTableIds = Object.values(thread0Group).flat().map(x => x.id);
+            
+            // Add tables from previous regular threads
+            const previousThreadGroups = Object.values(filteredLeafTableGroups).slice(0, i);
+            usedIntermediateTableIds = [...usedIntermediateTableIds, ...previousThreadGroups.flat()
+                .map(x => [ ...getTriggers(x, tables).map(y => y.tableId) || []]).flat()];
+            usedLeafTableIds = [...usedLeafTableIds, ...previousThreadGroups.flat().map(x => x.id)];
                 
             return <SingleThreadGroupView
                 key={`thread-${groupId}-${i}`}
@@ -1246,11 +1949,20 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
         })}
     </Box>
 
+    // Calculate total thread count (thread0 + regular threads)
+    let totalThreadCount = Object.keys(filteredLeafTableGroups).length + (Object.keys(thread0Group).length > 0 ? 1 : 0);
+    let threadIndices: number[] = [];
+    if (Object.keys(thread0Group).length > 0) {
+        threadIndices.push(-1); // thread0
+    }
+    threadIndices.push(...Array.from({length: Object.keys(filteredLeafTableGroups).length}, (_, i) => i));
+
     let jumpButtonsDrawerOpen = <ButtonGroup size="small" color="primary">
-        {_.chunk(Array.from({length: Object.keys(leafTableGroups).length}, (_, i) => i), 3).map((group, groupIdx) => {
-            const startNum = group[0] + 1;
-            const endNum = group[group.length - 1] + 1;
-            const label = startNum === endNum ? `${startNum}` : `${startNum}-${endNum}`;
+        {_.chunk(threadIndices, 3).map((group, groupIdx) => {
+            const getLabel = (idx: number) => idx === -1 ? '0' : String(idx + 1);
+            const startNum = getLabel(group[0]);
+            const endNum = getLabel(group[group.length - 1]);
+            const label = startNum === endNum ? startNum : `${startNum}-${endNum}`;
             
             return (
                 <Tooltip key={`thread-nav-group-${groupIdx}`} title={`Jump to thread${startNum === endNum ? '' : 's'} ${label}`}>
@@ -1265,8 +1977,9 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                                 const currentIndex = Array.from(document.querySelectorAll('[data-thread-index]')).reduce((closest, element) => {
                                     const rect = element.getBoundingClientRect();
                                     const distance = Math.abs(rect.left + rect.width/2 - viewportCenter);
+                                    const idx = parseInt(element.getAttribute('data-thread-index') || '0');
                                     if (!closest || distance < closest.distance) {
-                                        return { index: parseInt(element.getAttribute('data-thread-index') || '0'), distance };
+                                        return { index: idx, distance };
                                     }
                                     return closest;
                                 }, null as { index: number, distance: number } | null)?.index || 0;
@@ -1294,21 +2007,24 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
     </ButtonGroup>
 
     let jumpButtonDrawerClosed = <ButtonGroup size="small" color="primary" sx={{ gap: 0 }}>
-        {Object.keys(leafTableGroups).map((groupId, idx) => (
-            <Tooltip key={`thread-nav-${idx}`} title={`Jump to thread ${idx + 1}`}>
-                <IconButton 
-                    size="small" 
-                    color="primary"
-                    sx={{ fontSize: '12px', padding: '4px' }} 
-                    onClick={() => {
-                        const threadElement = document.querySelector(`[data-thread-index="${idx}"]`);
-                        threadElement?.scrollIntoView({ behavior: 'smooth' });
-                    }}
-                > 
-                    {idx + 1}
-                </IconButton>
-            </Tooltip>
-        ))}
+        {threadIndices.map((threadIdx) => {
+            const label = threadIdx === -1 ? '0' : String(threadIdx + 1);
+            return (
+                <Tooltip key={`thread-nav-${threadIdx}`} title={`Jump to thread${threadIdx === -1 ? '0' : ` ${threadIdx + 1}`}`}>
+                    <IconButton 
+                        size="small" 
+                        color="primary"
+                        sx={{ fontSize: '12px', padding: '4px' }} 
+                        onClick={() => {
+                            const threadElement = document.querySelector(`[data-thread-index="${threadIdx}"]`);
+                            threadElement?.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                    > 
+                        {label}
+                    </IconButton>
+                </Tooltip>
+            );
+        })}
     </ButtonGroup>
 
     let jumpButtons = drawerOpen ? jumpButtonsDrawerOpen : jumpButtonDrawerClosed;
@@ -1338,7 +2054,7 @@ export const DataThread: FC<{sx?: SxProps}> = function ({ sx }) {
                     <Tooltip title={"expand"}>
                         <span>
                             <IconButton size={'small'} color="primary" 
-                                disabled={leafTables.length <= 1} onClick={() => { 
+                                disabled={totalThreadCount <= 1} onClick={() => { 
                                     setThreadDrawerOpen(true); 
                                 }}>
                                 <ChevronRightIcon />

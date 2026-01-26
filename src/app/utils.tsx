@@ -52,11 +52,132 @@ export function getUrls() {
         DATA_LOADER_INGEST_DATA: `/api/tables/data-loader/ingest-data`,
         DATA_LOADER_VIEW_QUERY_SAMPLE: `/api/tables/data-loader/view-query-sample`,
         DATA_LOADER_INGEST_DATA_FROM_QUERY: `/api/tables/data-loader/ingest-data-from-query`,
+        DATA_LOADER_REFRESH_TABLE: `/api/tables/data-loader/refresh-table`,
+        DATA_LOADER_GET_TABLE_METADATA: `/api/tables/data-loader/get-table-metadata`,
+        DATA_LOADER_LIST_TABLE_METADATA: `/api/tables/data-loader/list-table-metadata`,
 
-        QUERY_COMPLETION: `/api/agent/query-completion`,
         GET_RECOMMENDATION_QUESTIONS: `/api/agent/get-recommendation-questions`,
         GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
+
+        // Refresh data endpoint
+        REFRESH_DERIVED_DATA: `/api/tables/refresh-derived-data`,
     };
+}
+
+/**
+ * List of API endpoints that require a session ID
+ * These endpoints will automatically fetch session ID if missing
+ */
+const SESSION_REQUIRED_ENDPOINTS = [
+    '/api/tables/upload-db-file',
+    '/api/tables/download-db-file',
+    '/api/tables/reset-db-file',
+    '/api/tables/list-tables',
+    '/api/tables/get-table',
+    '/api/tables/create-table',
+    '/api/tables/delete-table',
+    '/api/tables/analyze',
+    '/api/tables/sample-table',
+    '/api/tables/data-loader/list-tables',
+    '/api/tables/data-loader/ingest-data',
+    '/api/tables/data-loader/view-query-sample',
+    '/api/tables/data-loader/ingest-data-from-query',
+    '/api/tables/data-loader/refresh-table',
+    '/api/tables/data-loader/get-table-metadata',
+    '/api/tables/data-loader/list-table-metadata',
+    '/api/tables/refresh-derived-data',
+];
+
+/**
+ * Enhanced fetch wrapper that automatically handles session ID at the app level
+ * If a request fails with "No session ID found" or similar errors,
+ * it will automatically fetch the session ID and retry the request
+ * 
+ * This function can be used as a drop-in replacement for fetch() in components
+ * that have access to Redux dispatch
+ * 
+ * @param url - The URL to fetch
+ * @param options - Fetch options (same as native fetch)
+ * @param dispatch - Redux dispatch function (optional, will try to get from store if not provided)
+ * @returns Promise<Response>
+ */
+export async function fetchWithSession(
+    url: string | URL,
+    options: RequestInit = {},
+    dispatch?: any
+): Promise<Response> {
+    const urlString = typeof url === 'string' ? url : url.toString();
+    
+    // Check if this endpoint requires session ID
+    const requiresSession = SESSION_REQUIRED_ENDPOINTS.some(endpoint => 
+        urlString.includes(endpoint)
+    );
+    
+    // Make the initial request
+    let response = await fetch(url, options);
+    
+    // If the response indicates a session ID issue, try to fetch it and retry
+    if (requiresSession && !response.ok) {
+        try {
+            const errorData = await response.clone().json().catch(() => null);
+            const errorMessage = errorData?.message || errorData?.error || '';
+            
+            // Check if error is related to missing session ID
+            if (errorMessage.toLowerCase().includes('session') && 
+                (errorMessage.toLowerCase().includes('not found') || 
+                 errorMessage.toLowerCase().includes('no session'))) {
+                
+                // Try to get dispatch from store if not provided
+                let dispatchFn = dispatch;
+                if (!dispatchFn) {
+                    try {
+                        const { store } = await import('./store');
+                        dispatchFn = store.dispatch;
+                    } catch (storeError) {
+                        console.error('Failed to access store:', storeError);
+                        // Return the original error response
+                        return response;
+                    }
+                }
+                
+                // Fetch session ID and retry
+                if (dispatchFn) {
+                    try {
+                        const { getSessionId } = await import('./dfSlice');
+                        // Dispatch the thunk and unwrap the result
+                        await dispatchFn(getSessionId()).unwrap();
+                        
+                        // Retry the original request
+                        response = await fetch(url, options);
+                    } catch (sessionError) {
+                        console.error('Failed to fetch session ID:', sessionError);
+                        // Return the original error response
+                    }
+                }
+            }
+        } catch (parseError) {
+            // If we can't parse the error, just return the original response
+        }
+    }
+    
+    return response;
+}
+
+/**
+ * React hook that provides a fetch function with automatic session ID handling
+ * Use this in components instead of native fetch for API calls that require session ID
+ * 
+ * @example
+ * const fetchWithSession = useFetchWithSession();
+ * const response = await fetchWithSession('/api/tables/list-tables');
+ */
+export function useFetchWithSession() {
+    // Dynamic import to avoid circular dependency
+    const { useDispatch } = require('react-redux');
+    const dispatch = useDispatch();
+    
+    return (url: string | URL, options: RequestInit = {}) => 
+        fetchWithSession(url, options, dispatch);
 }
 
 import * as vm from 'vm-browserify';
@@ -68,6 +189,104 @@ export function usePrevious<T>(value: T): T | undefined {
         ref.current = value;
     });
     return ref.current;
+}
+
+/**
+ * Simple hash function (djb2 algorithm) for creating content fingerprints
+ * @param str - The string to hash
+ * @returns A hexadecimal hash string
+ */
+function djb2Hash(str: string): string {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) + hash) + str.charCodeAt(i);
+        hash = hash & hash; // Convert to 32-bit integer
+    }
+    return (hash >>> 0).toString(16); // Convert to unsigned and then to hex
+}
+
+/**
+ * Computes a content hash for table data to detect changes.
+ * Uses a sampling strategy for efficiency with large datasets:
+ * - Always includes column names and row count
+ * - Samples first 50, last 50, and 50 evenly distributed rows from the middle
+ * - This catches most data changes while remaining efficient
+ * 
+ * @param rows - The table rows to hash
+ * @param names - Optional column names (for additional fingerprinting)
+ * @returns A hash string representing the content
+ */
+export function computeContentHash(rows: any[], names?: string[]): string {
+    const parts: string[] = [];
+    
+    // Include column names if provided
+    if (names && names.length > 0) {
+        parts.push(`cols:${names.join(',')}`);
+    }
+    
+    // Include row count
+    const rowCount = rows.length;
+    parts.push(`count:${rowCount}`);
+    
+    if (rowCount === 0) {
+        return djb2Hash(parts.join('|'));
+    }
+    
+    // Get column names from first row if not provided
+    const columnNames = names || Object.keys(rows[0] || {});
+    parts.push(`fields:${columnNames.join(',')}`);
+    
+    // Sampling strategy for efficiency
+    const sampleSize = 50;
+    const samplesToInclude: number[] = [];
+    
+    // Always include first N rows
+    for (let i = 0; i < Math.min(sampleSize, rowCount); i++) {
+        samplesToInclude.push(i);
+    }
+    
+    // Include evenly distributed rows from the middle
+    if (rowCount > sampleSize * 2) {
+        const step = Math.floor((rowCount - sampleSize * 2) / sampleSize);
+        if (step > 0) {
+            for (let i = sampleSize; i < rowCount - sampleSize; i += step) {
+                if (samplesToInclude.length < sampleSize * 2) {
+                    samplesToInclude.push(i);
+                }
+            }
+        }
+    }
+    
+    // Always include last N rows
+    for (let i = Math.max(rowCount - sampleSize, sampleSize); i < rowCount; i++) {
+        if (!samplesToInclude.includes(i)) {
+            samplesToInclude.push(i);
+        }
+    }
+    
+    // Sort indices for consistent ordering
+    samplesToInclude.sort((a, b) => a - b);
+    
+    // Build content string from sampled rows
+    const rowStrings: string[] = [];
+    for (const idx of samplesToInclude) {
+        const row = rows[idx];
+        if (row) {
+            // Create a deterministic string representation of the row
+            const rowValues = columnNames.map(col => {
+                const val = row[col];
+                if (val === null) return 'null';
+                if (val === undefined) return 'undefined';
+                if (typeof val === 'object') return JSON.stringify(val);
+                return String(val);
+            });
+            rowStrings.push(`${idx}:${rowValues.join(',')}`);
+        }
+    }
+    
+    parts.push(`rows:${rowStrings.join(';')}`);
+    
+    return djb2Hash(parts.join('|'));
 }
 
 export function runCodeOnInputListsInVM(
@@ -135,7 +354,38 @@ export function extractFieldsFromEncodingMap(encodingMap: EncodingMap, allFields
     }
 
     return { aggregateFields, groupByFields };
-}   
+}
+
+/**
+ * Check if a numeric value is likely a Unix timestamp (seconds or milliseconds since epoch).
+ * Returns false for values that look like years or other small numbers.
+ */
+function isLikelyTimestamp(val: number): boolean {
+    // Unix timestamps in seconds: typically 10 digits (starts from ~1970)
+    // Unix timestamps in milliseconds: typically 13 digits
+    // Reasonable timestamp range: 1970 (0) to 2100 (~4102444800 seconds)
+    
+    // Milliseconds range: 1970 to 2100
+    const minTimestampMs = 0;  // Jan 1, 1970
+    const maxTimestampMs = 4102444800000;  // ~year 2100
+    
+    // Seconds range: 1970 to 2100
+    const minTimestampSec = 0;
+    const maxTimestampSec = 4102444800;  // ~year 2100
+    
+    // Check if it looks like milliseconds (13 digits, typically > 1e12)
+    if (val >= 1e12 && val <= maxTimestampMs) {
+        return true;
+    }
+    
+    // Check if it looks like seconds (10 digits, typically > 1e9)
+    // Must be > 1e9 to avoid confusion with years (1000-9999)
+    if (val >= 1e9 && val <= maxTimestampSec) {
+        return true;
+    }
+    
+    return false;
+}
 
 export function prepVisTable(table: any[], allFields: FieldItem[], encodingMap: EncodingMap) {
     let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(encodingMap, allFields);
@@ -234,7 +484,9 @@ export const assembleVegaChart = (
             let fieldMetadata = tableMetadata[field.name];
 
             if (fieldMetadata != undefined) {
-                encodingObj["type"] = getDType(fieldMetadata.type, workingTable.map(r => r[field.name]));
+                let fieldValues = workingTable.map(r => r[field.name]);
+                encodingObj["type"] = getDType(fieldMetadata.type, fieldValues);
+
                 if (fieldMetadata.semanticType == "Date" || fieldMetadata.semanticType == "DateTime" || fieldMetadata.semanticType == "YearMonth" || fieldMetadata.semanticType == "Year" || fieldMetadata.semanticType == "Decade") {
                     if (['color', 'size', 'column', 'row'].includes(channel)) {
                         encodingObj["type"] = "nominal";
@@ -274,10 +526,18 @@ export const assembleVegaChart = (
             } else if (channel == 'column' || channel == 'row') {
                 // if the column or row channel and no dtype is specified, use nominal
                 encodingObj["type"] = 'nominal';
-            } else if (chartType == 'Grouped Bar Chart' && (channel == 'color' || channel == 'x')) {
-                // if the chart type is grouped bar chart and the channel is color or x, use nominal
-                encodingObj["type"] = 'nominal';
             }
+
+            if (field && encodingObj["type"] == "quantitative") {
+                // TODO: special hack: if the field values are all valid temporal values, set the type to temporal
+                let sampleValues = workingTable.slice(0, 15).filter(r => r[field.name] != undefined).map(r => r[field.name]);
+                // ISO 8601 format: YYYY-MM-DDTHH:mm:ss.sss with optional timezone (Z or +/-HH:mm)
+                const isoDateRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
+                if (sampleValues.length > 0 && sampleValues.every((val: any) => isoDateRegex.test(`${val}`.trim()))) {
+                    encodingObj["type"] = "temporal";
+                }
+            }
+            
             
             if (aggrPreprocessed) {
                 if (encoding.aggregate) {
@@ -471,7 +731,30 @@ export const assembleVegaChart = (
         if (temporalKeys.length > 0) {
             values = values.map((r: any) => { 
                 for (let temporalKey of temporalKeys) {
-                    r[temporalKey] = String(r[temporalKey]);
+                    const val = r[temporalKey];
+                    const fieldMeta = tableMetadata[temporalKey];
+                    const semanticType = fieldMeta?.semanticType;
+                    
+                    // Convert to ISO date strings for Vega-Lite compatibility
+                    if (typeof val === 'number') {
+                        // Handle Year/Decade semantic types - these are year numbers, not timestamps
+                        if (semanticType === 'Year' || semanticType === 'Decade') {
+                            // Year values like 2018 should become "2018-01-01"
+                            r[temporalKey] = `${Math.floor(val)}`;
+                        } else if (isLikelyTimestamp(val)) {
+                            // Detect if timestamp is in seconds (10 digits) or milliseconds (13 digits)
+                            const timestamp = val < 1e12 ? val * 1000 : val;
+                            r[temporalKey] = new Date(timestamp).toISOString();
+                        } else {
+                            // Small numbers that aren't Year/Decade and don't look like timestamps
+                            // If it looks like a year (1000-9999), format as a date for consistency
+                            r[temporalKey] = String(val);
+                        }
+                    } else if (val instanceof Date) {
+                        r[temporalKey] = val.toISOString();
+                    } else {
+                        r[temporalKey] = String(val);
+                    }
                 }
                 return r;
             })

@@ -26,6 +26,9 @@ Concretely, you should first refine users' goal and then create a sql query in t
 
     1. First, refine users' [GOAL]. The main objective in this step is to check if "chart_type" and "chart_encodings" provided by the user are sufficient to achieve their "goal". Concretely:
         - based on the user's "goal" and "chart_type" and "chart_encodings", elaborate the goal into a "detailed_instruction".
+        - determine "input_tables", the names of a subset of input tables from [CONTEXT] section that will be used to achieve the user's goal.
+            - **IMPORTANT** Note that the Table 1 in [CONTEXT] section is the table the user is currently viewing, it should take precedence if the user refers to insights about the "current table".
+            - At the same time, leverage table information to determine which tables are relevant to the user's goal and should be used.
         - "display_instruction" is a short verb phrase describing the users' goal. 
             - it would be a short verbal description of user intent as a verb phrase (<12 words).
             - generate it based on detailed_instruction and the suggested chart_type and chart_encodings, but don't need to mention the chart details.
@@ -52,6 +55,7 @@ Concretely, you should first refine users' goal and then create a sql query in t
 
 ```
 {
+    "input_tables": ["student_exam"],
     "detailed_instruction": "..." // string, elaborate user instruction with details if the user
     "display_instruction": "..." // string, the short verb phrase describing the users' goal.
     "output_fields": [...] // string[], describe the desired output fields that the output data should have based on the user's goal, it's a good idea to preserve intermediate fields here (i.e., the goal of transformed data)
@@ -100,22 +104,23 @@ some notes:
 EXAMPLE='''
 [CONTEXT]
 
-Here are our datasets, here are their field summaries and samples:
+Here are 1 dataset with their summaries:
 
-table_0 (weather_seattle_atlanta) fields:
-	Date -- type: object, values: 1/1/2020, 1/10/2020, 1/11/2020, ..., 9/6/2020, 9/7/2020, 9/8/2020, 9/9/2020
-	City -- type: object, values: Atlanta, Seattle
-	Temperature -- type: int64, values: 30, 31, 32, ..., 83, 84, 85, 86
+## Table 1: weather_seattle_atlanta (548 rows × 3 columns)
 
-table_0 (weather_seattle_atlanta) sample:
+### Schema (3 fields)
+  - Date -- type: VARCHAR, values: 1/1/2020, 1/10/2020, 1/11/2020, ..., 9/7/2020, 9/8/2020, 9/9/2020
+  - City -- type: VARCHAR, values: Atlanta, Seattle
+  - Temperature -- type: INTEGER, range: [30, 86]
+
+### Sample Data (first 5 rows)
 ```
-|Date|City|Temperature
-0|1/1/2020|Seattle|51
-1|1/1/2020|Atlanta|45
-2|1/2/2020|Seattle|45
-3|1/2/2020|Atlanta|47
-4|1/3/2020|Seattle|48
-......
+        Date    City  Temperature
+0   1/1/2020  Seattle           51
+1   1/1/2020  Atlanta           45
+2   1/2/2020  Seattle           45
+3   1/2/2020  Atlanta           47
+4   1/3/2020  Seattle           48
 ```
 
 [GOAL]
@@ -129,6 +134,7 @@ table_0 (weather_seattle_atlanta) sample:
 [OUTPUT]
 
 {  
+    "input_tables": ["weather_seattle_atlanta"],
     "detailed_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures with Seattle temperatures on the x-axis and Atlanta temperatures on the y-axis. Color the points by which city is warmer.",  
     "display_instruction": "Create a scatter plot to compare Seattle and Atlanta temperatures",
     "output_fields": ["Date", "Seattle Temperature", "Atlanta Temperature", "Warmer City"],  
@@ -137,15 +143,20 @@ table_0 (weather_seattle_atlanta) sample:
 }
 
 ```sql
-WITH MovingAverage AS (  
-    SELECT   
-        Date,  
-        Cases,  
-        AVG(Cases) OVER (ORDER BY Date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS "7-day average cases"  
-    FROM us_covid_cases  
-)  
-SELECT Date, "7-day average cases"  
-FROM MovingAverage;  
+WITH pivoted AS (
+    SELECT 
+        Date,
+        MAX(CASE WHEN City = 'Seattle' THEN Temperature END) AS "Seattle Temperature",
+        MAX(CASE WHEN City = 'Atlanta' THEN Temperature END) AS "Atlanta Temperature"
+    FROM weather_seattle_atlanta
+    GROUP BY Date
+)
+SELECT 
+    Date,
+    "Seattle Temperature",
+    "Atlanta Temperature",
+    CASE WHEN "Seattle Temperature" > "Atlanta Temperature" THEN 'Seattle' ELSE 'Atlanta' END AS "Warmer City"
+FROM pivoted;
 ```
 '''
 
@@ -290,11 +301,7 @@ class SQLDataTransformationAgent(object):
                 logger.info(f"Created table {table_name} from dataframe")
 
 
-        data_summary = ""
-        for table in input_tables:
-            table_name = sanitize_table_name(table['name'])
-            table_summary_str = get_sql_table_statistics_str(self.conn, table_name)
-            data_summary += f"[TABLE {table_name}]\n\n{table_summary_str}\n\n"
+        data_summary = generate_sql_data_summary(self.conn, input_tables)
 
         goal = {
             "instruction": description,
@@ -352,26 +359,96 @@ class SQLDataTransformationAgent(object):
         return self.process_gpt_sql_response(response, messages)
         
 
+def generate_sql_data_summary(conn, input_tables: list[dict], 
+        row_sample_size: int = 5,
+        field_sample_size: int = 7,
+        max_val_chars: int = 140,
+        table_name_prefix: str = "Table"
+    ) -> str:
+    """
+    Generate a natural, well-organized summary of SQL input tables.
+    This is the SQL equivalent of generate_data_summary for pandas DataFrames.
+    
+    Organization approach:
+    - Each table is clearly separated with a header
+    - Information flows logically: Overview → Schema → Examples
+    - Consistent section ordering for better readability
+    
+    Args:
+        conn: DuckDB connection
+        input_tables: list of dicts, each containing 'name' key for the table name
+        row_sample_size: number of rows to sample in the data preview
+        field_sample_size: number of example values for each field
+        max_val_chars: max characters to show for each value
+        table_name_prefix: prefix for table headers (default "Table")
+    
+    Returns:
+        A formatted string summary of all tables
+    """
+    table_summaries = []
+    
+    for idx, table in enumerate(input_tables):
+        table_name = sanitize_table_name(table['name'])
+        description = table.get("attached_metadata", "")
+        table_summary_str = get_sql_table_statistics_str(
+            conn, table_name, 
+            row_sample_size=row_sample_size,
+            field_sample_size=field_sample_size,
+            max_val_chars=max_val_chars,
+            table_name_prefix=table_name_prefix,
+            table_idx=idx,
+            description=description
+        )
+        table_summaries.append(table_summary_str)
+    
+    # Add visual separator between tables (except for the last one)
+    separator = "\n" + "─" * 60 + "\n\n"
+    joined_summaries = separator.join(table_summaries)
+    
+    return joined_summaries
+
+
 def get_sql_table_statistics_str(conn, table_name: str, 
         row_sample_size: int = 5, # number of rows to be sampled in the sample data part
         field_sample_size: int = 7, # number of example values for each field to be sampled
-        max_val_chars: int = 140 # max number of characters to be shown for each example value
+        max_val_chars: int = 140, # max number of characters to be shown for each example value
+        table_name_prefix: str = "Table",
+        table_idx: int = 0,
+        description: str = ""
     ) -> str:
-    """Get a string representation of the table statistics"""
+    """
+    Get a string representation of the table statistics in markdown format.
+    
+    Organization:
+    - Header with table name and dimensions
+    - Description (if available)
+    - Schema section with field summaries
+    - Sample data section with code block
+    """
 
     table_name = sanitize_table_name(table_name)
 
-    # Get column information
+    # Get column information and row count
     columns = conn.execute(f"DESCRIBE {table_name}").fetchall()
-    sample_data = conn.execute(f"SELECT * FROM {table_name} LIMIT {row_sample_size}").fetchall()
+    row_count = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+    num_cols = len(columns)
     
-    # Format sample data as pipe-separated string
-    col_names = [col[0] for col in columns]
-    formatted_sample_data = "| " + " | ".join(col_names) + " |\n"
-    for i, row in enumerate(sample_data):
-        formatted_sample_data += f"{i}| " + " | ".join(str(val)[:max_val_chars]+ "..." if len(str(val)) > max_val_chars else str(val) for val in row) + " |\n"
+    # Build sections in logical order: Overview → Description → Schema → Examples
+    sections = []
     
-    col_metadata_list = []
+    # 1. Table Header with basic stats
+    header = f"## {table_name_prefix} {table_idx + 1}: {table_name}"
+    if row_count > 0:
+        header += f" ({row_count:,} rows × {num_cols} columns)"
+    sections.append(header)
+    sections.append("")  # Empty line for spacing
+    
+    # 2. Description (if available) - provides context first
+    if description:
+        sections.append(f"### Description\n{description}\n")
+    
+    # 3. Schema/Fields - core structure information
+    field_summaries = []
     for col in columns:
         col_name = col[0]
         col_type = col[1]
@@ -379,68 +456,61 @@ def get_sql_table_statistics_str(conn, table_name: str,
         # Properly quote column names to avoid SQL keywords issues
         quoted_col_name = f'"{col_name}"'
         
-        # Basic stats query
-        stats_query = f"""
-        SELECT 
-            COUNT(*) as count,
-            COUNT(DISTINCT {quoted_col_name}) as unique_count,
-            COUNT(*) - COUNT({quoted_col_name}) as null_count
-        FROM {table_name}
-        """
-        
-        # Add numeric stats if applicable
-        if col_type in ['INTEGER', 'DOUBLE', 'DECIMAL']:
-            stats_query = f"""
-            SELECT 
-                COUNT(*) as count,
-                COUNT(DISTINCT {quoted_col_name}) as unique_count,
-                COUNT(*) - COUNT({quoted_col_name}) as null_count,
-                MIN({quoted_col_name}) as min_value,
-                MAX({quoted_col_name}) as max_value,
-                AVG({quoted_col_name}) as avg_value
+        # Get sample values for the field
+        if col_type in ['INTEGER', 'BIGINT', 'DOUBLE', 'DECIMAL', 'FLOAT', 'REAL']:
+            # For numeric types, get min/max as value range indicator
+            range_query = f"""
+            SELECT MIN({quoted_col_name}), MAX({quoted_col_name})
             FROM {table_name}
+            WHERE {quoted_col_name} IS NOT NULL
             """
-        
-        col_stats = conn.execute(stats_query).fetchone()
-        
-        # Create a dictionary with appropriate keys based on column type
-        if col_type in ['INTEGER', 'DOUBLE', 'DECIMAL']:
-            stats_dict = dict(zip(
-                ["count", "unique_count", "null_count", "min", "max", "avg"],
-                col_stats
-            ))
+            range_result = conn.execute(range_query).fetchone()
+            if range_result[0] is not None:
+                min_val, max_val = range_result
+                val_str = f"range: [{min_val}, {max_val}]"
+            else:
+                val_str = "all null"
         else:
-            stats_dict = dict(zip(
-                ["count", "unique_count", "null_count"],
-                col_stats
-            ))
-
-            # Combined query for top 4 and bottom 3 values using UNION ALL
+            # For non-numeric types, get sample values similar to Python version
             query_for_sample_values = f"""
-            (SELECT DISTINCT {quoted_col_name}
-                FROM {table_name} 
-                WHERE {quoted_col_name} IS NOT NULL 
-                LIMIT {field_sample_size})
+            SELECT DISTINCT {quoted_col_name}
+            FROM {table_name} 
+            WHERE {quoted_col_name} IS NOT NULL 
+            ORDER BY {quoted_col_name}
+            LIMIT {field_sample_size * 2}
             """
             
-            sample_values = conn.execute(query_for_sample_values).fetchall()
-            
-            stats_dict['sample_values'] = [str(val)[:max_val_chars]+ "..." if len(str(val)) > max_val_chars else str(val) for val in sample_values]
-
-        col_metadata_list.append({
-            "column": col_name,
-            "type": col_type,
-            "statistics": stats_dict,
-        })
-
-    table_metadata = {
-        "column_metadata": col_metadata_list,
-        "sample_data_str": formatted_sample_data
-    }
-
-    table_summary_str = f"Column metadata:\n\n"
-    for col_metadata in table_metadata['column_metadata']:
-        table_summary_str += f"\t{col_metadata['column']} ({col_metadata['type']}) ---- {col_metadata['statistics']}\n"
-    table_summary_str += f"\n\nSample data:\n\n{table_metadata['sample_data_str']}\n"
-
-    return table_summary_str
+            try:
+                sample_values_result = conn.execute(query_for_sample_values).fetchall()
+                sample_values = [row[0] for row in sample_values_result]
+                
+                # Format values similar to Python version
+                def sample_val_cap(val):
+                    s = str(val)
+                    if len(s) > max_val_chars:
+                        s = s[:max_val_chars] + "..."
+                    if ',' in s:
+                        s = f'"{s}"'
+                    return s
+                
+                if len(sample_values) <= field_sample_size:
+                    val_sample = sample_values
+                else:
+                    half = field_sample_size // 2
+                    val_sample = sample_values[:half] + ["..."] + sample_values[-(field_sample_size - half):]
+                
+                val_str = "values: " + ', '.join([sample_val_cap(v) for v in val_sample])
+            except Exception:
+                val_str = "values: N/A"
+        
+        field_summaries.append(f"  - {col_name} -- type: {col_type}, {val_str}")
+    
+    fields_summary = '\n'.join(field_summaries)
+    sections.append(f"### Schema ({num_cols} fields)\n{fields_summary}\n")
+    
+    # 4. Sample data - concrete examples last
+    if row_count > 0:
+        sample_data = conn.execute(f"SELECT * FROM {table_name} LIMIT {row_sample_size}").fetch_df()
+        sections.append(f"### Sample Data (first {min(row_sample_size, row_count)} rows)\n```\n{sample_data.to_string()}\n```\n")
+    
+    return '\n'.join(sections)

@@ -240,7 +240,7 @@ MongoDB Connection Instructions:
         
         return results
     
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 100000):
+    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 100000, sort_columns: List[str] = None, sort_order: str = 'asc'):
         """
         Import MongoDB collection data into DuckDB
         """
@@ -256,7 +256,16 @@ MongoDB Connection Instructions:
 
         # Get and process data from MongoDB (limit rows)
         collection = self.db[collection_name]
-        data_cursor = collection.find().limit(size)
+        
+        # Build cursor with optional sorting
+        data_cursor = collection.find()
+        if sort_columns and len(sort_columns) > 0:
+            # MongoDB sort format: 1 for ascending, -1 for descending
+            sort_direction = -1 if sort_order == 'desc' else 1
+            sort_spec = [(col, sort_direction) for col in sort_columns]
+            data_cursor = data_cursor.sort(sort_spec)
+        data_cursor = data_cursor.limit(size)
+        
         data_list = list(data_cursor)
         if not data_list:
             raise Exception(f"No data found in MongoDB collection '{collection_name}'.")
