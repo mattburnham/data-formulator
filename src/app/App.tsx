@@ -64,16 +64,12 @@ import { DictTable } from '../components/ComponentType';
 import { AppDispatch } from './store';
 import dfLogo from '../assets/df-logo.png';
 import { ModelSelectionButton } from '../views/ModelSelectionDialog';
-import { TableCopyDialogV2 } from '../views/TableSelectionView';
-import { TableUploadDialog } from '../views/TableSelectionView';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
-import { DBTableSelectionDialog, handleDBDownload } from '../views/DBTableManager';
-import CloudQueueIcon from '@mui/icons-material/CloudQueue';
+import { handleDBDownload } from '../views/DBTableManager';
 import { getUrls } from './utils';
-import { DataLoadingChatDialog } from '../views/DataLoadingChat';
+import { UnifiedDataUploadDialog } from '../views/UnifiedDataUploadDialog';
 import ChatIcon from '@mui/icons-material/Chat';
 import { AgentRulesDialog } from '../views/AgentRulesDialog';
 import ArticleIcon from '@mui/icons-material/Article';
@@ -220,85 +216,23 @@ export interface AppFCProps {
 
 // Extract menu components into separate components to prevent full app re-renders
 const TableMenu: React.FC = () => {
-    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-    const [openDialog, setOpenDialog] = useState<'database' | 'extract' | 'paste' | 'upload' | null>(null);
-    const fileInputRef = React.useRef<HTMLInputElement>(null);
-    const open = Boolean(anchorEl);
-
-    const handleOpenDialog = (dialog: 'database' | 'extract' | 'paste' | 'upload') => {
-        setAnchorEl(null);
-        if (dialog === 'upload') {
-            // For file upload, trigger the hidden file input
-            fileInputRef.current?.click();
-        } else {
-            setOpenDialog(dialog);
-        }
-    };
+    const [dialogOpen, setDialogOpen] = useState<boolean>(false);
     
     return (
         <>
             <Button
                 variant="text"
-                onClick={(e) => setAnchorEl(e.currentTarget)}
-                endIcon={<KeyboardArrowDownIcon />}
-                aria-controls={open ? 'add-table-menu' : undefined}
-                aria-haspopup="true"
-                aria-expanded={open ? 'true' : undefined}
+                onClick={() => setDialogOpen(true)}
                 sx={{ textTransform: 'none' }}
             >
                 Data
             </Button>
-            <Menu
-                id="add-table-menu"
-                anchorEl={anchorEl}
-                open={open}
-                onClose={() => setAnchorEl(null)}
-                slotProps={{
-                    paper: { sx: { py: '4px', px: '8px' } }
-                }}
-                aria-labelledby="add-table-button"
-                sx={{ 
-                    '& .MuiMenuItem-root': { padding: '4px 8px' },
-                    '& .MuiTypography-root': { fontSize: 14, display: 'flex', alignItems: 'center', textTransform: 'none', gap: 1 }
-                }}
-            >
-                <MenuItem onClick={() => handleOpenDialog('database')}>
-                    <Typography fontSize="inherit">
-                        connect to database <CloudQueueIcon fontSize="inherit" /> 
-                    </Typography>
-                </MenuItem>
-                <MenuItem onClick={() => handleOpenDialog('extract')}>
-                    <Typography fontSize="inherit">
-                        extract data <span style={{fontSize: '11px'}}>(image/messy text)</span>
-                    </Typography>
-                </MenuItem>
-                <MenuItem onClick={() => handleOpenDialog('paste')}>
-                    <Typography>
-                        paste data <span style={{fontSize: '11px'}}>(csv/tsv)</span>
-                    </Typography>
-                </MenuItem>
-                <MenuItem onClick={() => handleOpenDialog('upload')}>
-                    <Typography>
-                        upload data file <span style={{fontSize: '11px'}}>(csv/tsv/json)</span>
-                    </Typography>
-                </MenuItem>
-            </Menu>
             
-            {/* Dialogs rendered outside the Menu to avoid keyboard event issues */}
-            <DBTableSelectionDialog 
-                open={openDialog === 'database'} 
-                onClose={() => setOpenDialog(null)} 
-            />
-            <DataLoadingChatDialog 
-                open={openDialog === 'extract'} 
-                onClose={() => setOpenDialog(null)} 
-            />
-            <TableCopyDialogV2 
-                open={openDialog === 'paste'} 
-                onClose={() => setOpenDialog(null)} 
-            />
-            <TableUploadDialog 
-                fileInputRef={fileInputRef}
+            {/* Unified Data Upload Dialog */}
+            <UnifiedDataUploadDialog 
+                open={dialogOpen}
+                onClose={() => setDialogOpen(false)}
+                initialTab="menu"
             />
         </>
     );

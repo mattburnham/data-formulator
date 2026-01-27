@@ -56,19 +56,8 @@ class ExternalDataLoader(ABC):
             if pd.api.types.is_datetime64_any_dtype(df[col]):
                 sample_values = df[col].dropna().head(3)
                 logger.info(f"Datetime column '{col}' sample values: {list(sample_values)}")
-
-        base_name = table_name
-        counter = 1
-        while True:
-            # Check if table exists
-            exists = self.duck_db_conn.execute(f"SELECT COUNT(*) FROM duckdb_tables() WHERE table_name = '{table_name}'").fetchone()[0] > 0
-            if not exists:
-                break
-            # If exists, append counter to base name
-            table_name = f"{base_name}_{counter}"
-            counter += 1
     
-        # Create table
+        # Create or replace table (replaces existing table with same name)
         random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=6))
         self.duck_db_conn.register(f'df_temp_{random_suffix}', df)
         
@@ -79,10 +68,10 @@ class ExternalDataLoader(ABC):
         except Exception as e:
             logger.warning(f"Could not get schema info: {e}")
         
-        self.duck_db_conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM df_temp_{random_suffix}")
+        self.duck_db_conn.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM df_temp_{random_suffix}")
         self.duck_db_conn.execute(f"DROP VIEW df_temp_{random_suffix}")  # Drop the temporary view after creating the table
         
-        logger.info(f"Successfully created DuckDB table '{table_name}'")
+        logger.info(f"Successfully created/replaced DuckDB table '{table_name}'")
     
     
     @staticmethod
@@ -104,7 +93,16 @@ class ExternalDataLoader(ABC):
         pass
 
     @abstractmethod
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
+        """Ingest data from a table into DuckDB.
+        
+        Args:
+            table_name: The source table name
+            name_as: Optional name for the destination table
+            size: Maximum number of rows to import (row limit)
+            sort_columns: Optional list of columns to sort by before applying the limit
+            sort_order: Sort direction, 'asc' for ascending or 'desc' for descending
+        """
         pass
 
     @abstractmethod

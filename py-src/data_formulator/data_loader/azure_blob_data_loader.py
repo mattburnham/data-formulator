@@ -348,29 +348,39 @@ Supported File Formats:
             print(f"Error in row sampling for {azure_url}: {e}")
             return 0
 
-    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: str = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
         if name_as is None:
             name_as = table_name.split('/')[-1].split('.')[0]
         
         name_as = sanitize_table_name(name_as)
+        
+        # Build ORDER BY clause if sort_columns are specified
+        order_by_clause = ""
+        if sort_columns and len(sort_columns) > 0:
+            order_direction = "DESC" if sort_order == 'desc' else "ASC"
+            sanitized_cols = [f'"{col}" {order_direction}' for col in sort_columns]
+            order_by_clause = f"ORDER BY {', '.join(sanitized_cols)}"
         
         # Determine file type and use appropriate DuckDB function
         if table_name.lower().endswith('.csv'):
             self.duck_db_conn.execute(f"""
                 CREATE OR REPLACE TABLE main.{name_as} AS 
                 SELECT * FROM read_csv_auto('{table_name}')
+                {order_by_clause}
                 LIMIT {size}
             """)
         elif table_name.lower().endswith('.parquet'):
             self.duck_db_conn.execute(f"""
                 CREATE OR REPLACE TABLE main.{name_as} AS 
                 SELECT * FROM read_parquet('{table_name}')
+                {order_by_clause}
                 LIMIT {size}
             """)
         elif table_name.lower().endswith('.json') or table_name.lower().endswith('.jsonl'):
             self.duck_db_conn.execute(f"""
                 CREATE OR REPLACE TABLE main.{name_as} AS 
                 SELECT * FROM read_json_auto('{table_name}')
+                {order_by_clause}
                 LIMIT {size}
             """)
         else:

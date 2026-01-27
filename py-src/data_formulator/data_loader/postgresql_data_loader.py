@@ -130,16 +130,25 @@ class PostgreSQLDataLoader(ExternalDataLoader):
             print(f"Error listing tables: {e}")
             return []
 
-    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000):
+    def ingest_data(self, table_name: str, name_as: Optional[str] = None, size: int = 1000000, sort_columns: List[str] = None, sort_order: str = 'asc'):
         # Create table in the main DuckDB database from Postgres data
         if name_as is None:
             name_as = table_name.split('.')[-1]
 
         name_as = sanitize_table_name(name_as)
 
+        # Build ORDER BY clause if sort_columns are specified
+        order_by_clause = ""
+        if sort_columns and len(sort_columns) > 0:
+            # Sanitize column names to prevent SQL injection
+            order_direction = "DESC" if sort_order == 'desc' else "ASC"
+            sanitized_cols = [f'"{col}" {order_direction}' for col in sort_columns]
+            order_by_clause = f"ORDER BY {', '.join(sanitized_cols)}"
+
         self.duck_db_conn.execute(f"""
             CREATE OR REPLACE TABLE main.{name_as} AS 
             SELECT * FROM {table_name} 
+            {order_by_clause}
             LIMIT {size}
         """)
 

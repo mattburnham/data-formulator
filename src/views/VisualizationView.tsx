@@ -300,6 +300,7 @@ const VegaChartRenderer: FC<{
             return;
         }
 
+
         const assembledChart = assembleVegaChart(
             chart.chartType, 
             chart.encodingMap, 
@@ -453,8 +454,8 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
     const processedData = createVisTableRowsLocal(table.rows);
 
     const [visTableRows, setVisTableRows] = useState<any[]>(processedData);
+
     const [visTableTotalRowCount, setVisTableTotalRowCount] = useState<number>(table.virtual?.rowCount || table.rows.length);
-    
 
     let { aggregateFields, groupByFields } = extractFieldsFromEncodingMap(focusedChart.encodingMap, conceptShelfItems);
     let sortedVisDataFields = [...aggregateFields.map(f => `${f[0]}_${f[1]}`), ...groupByFields].sort();
@@ -553,7 +554,7 @@ export const ChartEditorFC: FC<{}> = function ChartEditorFC({}) {
             setVisTableTotalRowCount(table.virtual?.rowCount || table.rows.length);
             setDataVersion(versionId);
         }
-    }, [dataRequirements])
+    }, [dataRequirements, table.rows])
     
 
 

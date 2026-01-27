@@ -35,6 +35,7 @@ import os
 # blueprints
 from data_formulator.tables_routes import tables_bp
 from data_formulator.agent_routes import agent_bp
+from data_formulator.demo_stream_routes import demo_stream_bp, limiter as demo_stream_limiter
 from data_formulator.db_manager import db_manager
 from data_formulator.example_datasets_config import EXAMPLE_DATASETS
 
@@ -44,6 +45,10 @@ from typing import Dict, Any
 app = Flask(__name__, static_url_path='', static_folder=os.path.join(APP_ROOT, "dist"))
 app.secret_key = secrets.token_hex(16)  # Generate a random secret key for sessions
 app.json.sort_keys = False
+
+# Initialize rate limiter for demo stream routes that call external APIs
+# The limiter is defined in demo_stream_routes.py to avoid circular imports
+demo_stream_limiter.init_app(app)
 
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -74,6 +79,7 @@ app.config['CLI_ARGS'] = {
 if not app.config['CLI_ARGS']['disable_database']:
     app.register_blueprint(tables_bp)
 app.register_blueprint(agent_bp)
+app.register_blueprint(demo_stream_bp)
 
 # Get logger for this module (logging config moved to run_app function)
 logger = logging.getLogger(__name__)

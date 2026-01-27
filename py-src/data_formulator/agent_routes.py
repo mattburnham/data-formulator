@@ -31,7 +31,6 @@ from data_formulator.agents.agent_data_load import DataLoadAgent
 from data_formulator.agents.agent_data_clean import DataCleanAgent
 from data_formulator.agents.agent_data_clean_stream import DataCleanAgentStream
 from data_formulator.agents.agent_code_explanation import CodeExplanationAgent
-from data_formulator.agents.agent_query_completion import QueryCompletionAgent
 from data_formulator.agents.agent_interactive_explore import InteractiveExploreAgent
 from data_formulator.agents.agent_report_gen import ReportGenAgent
 from data_formulator.agents.client_utils import Client
@@ -613,26 +612,6 @@ def request_code_expl():
             return jsonify({'error': 'No explanation generated'}), 400
     else:
         return jsonify({'error': 'Invalid request format'}), 400
-
-@agent_bp.route('/query-completion', methods=['POST'])
-def query_completion():
-    if request.is_json:
-        logger.info("# request data: ")
-        content = request.get_json()        
-
-        client = get_client(content['model'])
-
-        data_source_metadata = content["data_source_metadata"]
-        query = content["query"]
-
-        query_completion_agent = QueryCompletionAgent(client=client)
-        reasoning, query = query_completion_agent.run(data_source_metadata, query)
-        response = flask.jsonify({ "token": "", "status": "ok", "reasoning": reasoning, "query": query })
-    else:
-        response = flask.jsonify({ "token": "", "status": "error", "reasoning": "unable to complete query", "query": "" })
-
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    return response
 
 @agent_bp.route('/get-recommendation-questions', methods=['GET', 'POST'])
 def get_recommendation_questions():

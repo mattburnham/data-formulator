@@ -18,7 +18,6 @@ import { Allotment } from "allotment";
 import "allotment/dist/style.css";
 
 import {
-
     Typography,
     Box,
     Tooltip,
@@ -27,13 +26,6 @@ import {
     useTheme,
     alpha,
 } from '@mui/material';
-import {
-    FolderOpen as FolderOpenIcon,
-    ContentPaste as ContentPasteIcon,
-    Category as CategoryIcon,
-    CloudQueue as CloudQueueIcon,
-    AutoFixNormal as AutoFixNormalIcon,
-} from '@mui/icons-material';
 
 import { FreeDataViewFC } from './DataView';
 import { VisualizationViewFC } from './VisualizationView';
@@ -41,19 +33,17 @@ import { VisualizationViewFC } from './VisualizationView';
 import { ConceptShelf } from './ConceptShelf';
 import { DndProvider } from 'react-dnd'
 import { HTML5Backend } from 'react-dnd-html5-backend'
-import { TableCopyDialogV2, DatasetSelectionDialog } from './TableSelectionView';
-import { TableUploadDialog } from './TableSelectionView';
 import { toolName } from '../app/App';
 import { DataThread } from './DataThread';
 
 import dfLogo from '../assets/df-logo.png';
 import exampleImageTable from "../assets/example-image-table.png";
 import { ModelSelectionButton } from './ModelSelectionDialog';
-import { DBTableSelectionDialog } from './DBTableManager';
 import { getUrls } from '../app/utils';
-import { DataLoadingChatDialog } from './DataLoadingChat';
+import { UnifiedDataUploadDialog, UploadTabType, DataLoadMenu } from './UnifiedDataUploadDialog';
 import { ReportView } from './ReportView';
 import { ExampleSession, exampleSessions, ExampleSessionCard } from './ExampleSessions';
+import { useDataRefresh, useDerivedTableRefresh } from '../app/useDataRefresh';
 
 export const DataFormulatorFC = ({ }) => {
 
@@ -61,9 +51,22 @@ export const DataFormulatorFC = ({ }) => {
     const models = useSelector((state: DataFormulatorState) => state.models);
     const selectedModelId = useSelector((state: DataFormulatorState) => state.selectedModelId);
     const viewMode = useSelector((state: DataFormulatorState) => state.viewMode);
+    const serverConfig = useSelector((state: DataFormulatorState) => state.serverConfig);
     const theme = useTheme();
 
     const dispatch = useDispatch();
+    
+    // Set up automatic refresh of derived tables when source data changes
+    useDerivedTableRefresh();
+
+    // State for unified data upload dialog
+    const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+    const [uploadDialogInitialTab, setUploadDialogInitialTab] = useState<UploadTabType>('menu');
+
+    const openUploadDialog = (tab: UploadTabType) => {
+        setUploadDialogInitialTab(tab);
+        setUploadDialogOpen(true);
+    };
 
     const handleLoadExampleSession = (session: ExampleSession) => {
         dispatch(dfActions.addMessages({
@@ -224,7 +227,7 @@ export const DataFormulatorFC = ({ }) => {
                 {viewMode === 'editor' ? (
                     <>
                         {visPane}
-                        <ConceptShelf />
+                        {/* <ConceptShelf /> */}
                     </>
                 ) : (
                     <ReportView />
@@ -273,20 +276,16 @@ export const DataFormulatorFC = ({ }) => {
                 Explore data with visualizations, powered by AI agents. 
             </Typography>
             <Box sx={{my: 4}}>
-                <Typography sx={{ 
-                    maxWidth: 1100, fontSize: 28, color: alpha(theme.palette.text.primary, 0.8), 
-                    '& span': { textDecoration: 'underline', textUnderlineOffset: '0.2em', cursor: 'pointer' }}}>
-                    To begin, 
-                    <DataLoadingChatDialog buttonElement={<span>extract</span>}/>{' '}
-                    data from images or text documents, load {' '}
-                    <DatasetSelectionDialog buttonElement={<span>examples</span>}/>, 
-                    upload data from{' '}
-                    <TableCopyDialogV2 buttonElement={<span>clipboard</span>} disabled={false}/> or {' '}
-                    <TableUploadDialog buttonElement={<span>files</span>} disabled={false}/>, 
-                    
-                    or connect to a{' '}
-                    <DBTableSelectionDialog buttonElement={<span>database</span>}/>.
-                </Typography>
+                <DataLoadMenu 
+                    onSelectTab={(tab) => openUploadDialog(tab)}
+                    serverConfig={serverConfig}
+                    variant="page"
+                />
+                <UnifiedDataUploadDialog 
+                    open={uploadDialogOpen}
+                    onClose={() => setUploadDialogOpen(false)}
+                    initialTab={uploadDialogInitialTab}
+                />
             </Box>
             <Box sx={{mt: 4}}>
                 <Divider sx={{width: '200px', mx: 'auto', mb: 3, fontSize: '1.2rem'}}>
@@ -331,7 +330,7 @@ export const DataFormulatorFC = ({ }) => {
                         zIndex: 1000,
                     }}>
                         <Box sx={{margin:'auto', pb: '5%', display: "flex", flexDirection: "column", textAlign: "center"}}>
-                            <Box component="img" sx={{  width: 196, margin: "auto" }} alt="" src={dfLogo} fetchPriority="high" />
+                            <Box component="img" sx={{  width: 196, margin: "auto" }} alt="Data Formulator logo" src={dfLogo} fetchPriority="high" />
                             <Typography variant="h3" sx={{marginTop: "20px", fontWeight: 200, letterSpacing: '0.05em'}}>
                                 {toolName}
                             </Typography>

@@ -148,3 +148,26 @@ h2.view-title {
     transform-origin: bottom right;
     animation: writing-pencil 0.8s ease-in-out infinite;
 }
+
+// Fix MUI Dialog bottom scrolling issues
+.MuiDialog-paper {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100% - 64px);
+    
+    .MuiDialogTitle-root {
+        flex-shrink: 0;
+    }
+    
+    .MuiDialogContent-root {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        overflow-x: hidden;
+        box-sizing: border-box;
+        min-height: 0; // Ensures content can shrink in flex container
+    }
+    
+    .MuiDialogActions-root {
+        flex-shrink: 0;
+    }
+}

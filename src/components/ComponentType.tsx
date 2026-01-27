@@ -40,7 +40,6 @@ export interface Trigger {
     instruction: string,
     displayInstruction: string, // the short instruction that will be displayed to the user
 
-
     resultTableId: string,
 }
 
@@ -68,6 +67,37 @@ export interface DataCleanBlock {
 
     // For output messages  
     dialogItem?: any; // Store the dialog item from the model response
+}
+
+// Data source types for tracking where data originated
+export type DataSourceType = 'paste' | 'file' | 'url' | 'stream' | 'database' | 'example' | 'extract';
+
+// Configuration for data source refresh behavior
+// Note: For database sources, connection details are stored in DuckDB backend,
+// not in the frontend. Frontend only manages refresh timing/toggle.
+export interface DataSourceConfig {
+    type: DataSourceType;
+    
+    // For URL/stream sources - the URL to fetch data from
+    url?: string;
+    
+    // Refresh interval in seconds (used for streams and database auto-refresh)
+    refreshIntervalSeconds?: number;
+    
+    // For database sources - the DuckDB table name (backend knows how to refresh it)
+    databaseTable?: string;
+    
+    // Whether auto-refresh is enabled (frontend controls this for all source types)
+    autoRefresh?: boolean;
+    
+    // Last refresh timestamp
+    lastRefreshed?: number;
+    
+    // Original file name (for file uploads)
+    fileName?: string;
+    
+    // Whether this table can be refreshed (backend has connection info)
+    canRefresh?: boolean;
 }
 
 export interface DictTable {
@@ -106,6 +136,13 @@ export interface DictTable {
     anchored: boolean; // whether this table is anchored as a persistent table used to derive other tables
     createdBy: 'user' | 'agent'; // whether this table is created by the user or the agent
     attachedMetadata: string; // a string of attached metadata explaining what the table is about (used for prompt)
+    
+    // New field: tracks the source of the data and refresh configuration
+    source?: DataSourceConfig;
+    
+    // Content hash for detecting data changes during refresh
+    // Used to avoid unnecessary derived table recalculations when data hasn't changed
+    contentHash?: string;
 }
 
 export function createDictTable(
@@ -115,7 +152,8 @@ export function createDictTable(
     virtual: {tableId: string, rowCount: number} | undefined = undefined,
     anchored: boolean = false,
     createdBy: 'user' | 'agent' = 'user', // by default, all tables are created by the user
-    attachedMetadata: string = ''
+    attachedMetadata: string = '',
+    source: DataSourceConfig | undefined = undefined
 ) : DictTable {
     
     let names = Object.keys(rows[0])
@@ -137,7 +175,8 @@ export function createDictTable(
         virtual,
         anchored,
         createdBy,
-        attachedMetadata
+        attachedMetadata,
+        source
     }
 }
 

@@ -32,6 +32,10 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 
 
 ## News 🔥🔥🔥
+[01-25-2025] **Data Formulator 0.6** — Real-time insights from live data
+-  ⚡ **Connect to live data**: Connect to URLs and databases with automatic refresh intervals. Visualizations update automatically as your data changes to provide you live insights. [Demo: track international space station position speed live](https://github.com/microsoft/data-formulator/releases/tag/0.6)
+-  🎨 **UI Updates**: Unified UI for data loading; direct drag-and-drop fields from the data table to update visualization designs.
+
 [12-08-2025] **Data Formulator 0.5.1** — Connect more, visualize more, move faster
 - 🔌 **Community data loaders**: Google BigQuery, MySQL, Postgres, MongoDB
 - 📊 **New chart types**: US Map & Pie Chart (more to be added soon)
@@ -41,10 +45,7 @@ https://github.com/user-attachments/assets/8ca57b68-4d7a-42cb-bcce-43f8b1681ce2 
 [11-07-2025] Data Formulator 0.5: Vibe with your data, in control
 
 - 📊 **Load (almost) any data**: load structured data, extract data from screenshots, from messy text blocks, or connect to databases.
-- 🤖 **Explore data with AI agents**: 
-  - In agent mode, provide a high-level goal and ask agents to explore data for you.
-  - To stay in control, directly interact with agents: ask for recommendations or specify chart designs with UI + NL inputs, and AI agents will formulate data to realize your design.
-  - Use data threads to control branching exploration paths: backtrack, branch, or follow up.
+- 🤖 **Explore data with AI agents**: Use agent mode for hands-off exploration, or stay in control in interactive mode.
 - ✅ **Verify AI generated results**: interact with charts and inspect data, formulas, explanations, and code.
 - 📝 **Create reports to share insights**: choose charts you want to share, and ask agents to create reports grounded in data formulated throughout exploration.
 
