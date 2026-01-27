@@ -38,7 +38,7 @@ Concretely, you should first refine users' goal and then create a python functio
             - **IMPORTANT** Note that the Table 1 in [CONTEXT] section is the table the user is currently viewing, it should take precedence if the user refers to insights about the "current table".
             - At the same time, leverage table information to determine which tables are relevant to the user's goal and should be used.
         - determine "output_fields", the desired fields that the output data should have to achieve the user's goal, it's a good idea to include intermediate fields here.
-        - then decide "chart_encodings", which maps visualization channels (x, y, color, size, opacity, facet, etc.) to a subset of "output_fields" that will be visualized, 
+        - then decide "chart_encodings", which maps visualization channels (x, y, color, size, opacity, facet, latitude, longitude, etc.) to a subset of "output_fields" that will be visualized, 
             - the "chart_encodings" should be created to support the user's "chart_type".
             - first, determine whether the user has provided sufficient fields in "chart_encodings" that are needed to achieve their goal:
                 - if the user's "chart_encodings" are sufficient, simply copy it.
@@ -49,6 +49,7 @@ Concretely, you should first refine users' goal and then create a python functio
                 - if the user's "chart_encodings" is sufficient but can be optimized, you can reorder encodings to visualize the data more effectively.
             - sometimes, user may provide instruction to update visualizations fields they provided. You should leverage the user's goal to resolve the conflict and decide the final "chart_encodings"
                 - e.g., they may mention "use B metric instead" while A metric is in provided fields, in this case, you should update "chart_encodings" to update A metric with B metric.
+            - if the user provides latitude and longitude as visual channels, use "latitude" and "longitude" as visual channels in "chart_encodings" as opposed to "x" and "y".
         - guide on statistical analysis:
             - when the user asks for forecasting or regression analysis, you should consider the following:
                 - the output should be a long format table where actual x, y pairs and predicted x, y pairs are included in the X, Y columns, they are differentiated with a third column "is_predicted".

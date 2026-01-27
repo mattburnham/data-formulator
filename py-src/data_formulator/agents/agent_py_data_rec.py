@@ -67,7 +67,7 @@ Concretely:
             * the column can either be a column in the input data, or a new column that will be computed in the output data.
             * the mention don't have to be exact match, it can be semantically matching, e.g., if you mentioned "average score" in the text while the column to be computed is "Avg_Score", you should still highlight "**average score**" in the text.
     - determine "input_tables", the names of a subset of input tables from [CONTEXT] section that will be used to achieve the user's goal.
-        - Note that the first table is the table the user is currently viewing, it should take precedence if the user asks for visualization of the "current table".
+        - **IMPORTANT** Note that the Table 1 in [CONTEXT] section is the table the user is currently viewing, it should take precedence if the user refers to insights about the "current table".
         - At the same time, leverage table information to determine which tables are relevant to the user's goal and should be used.
     - "chart_type" must be one of "point", "bar", "line", "area", "heatmap", "group_bar", "boxplot"
     - "chart_encodings" should specify which fields should be used to create the visualization

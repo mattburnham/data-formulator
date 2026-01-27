@@ -27,6 +27,7 @@ export function useDataRefresh() {
     const timeoutRefs = useRef<Map<string, NodeJS.Timeout>>(new Map());
     const refreshInProgressRef = useRef<Map<string, boolean>>(new Map());
     const isActiveRef = useRef<Map<string, boolean>>(new Map());
+    const initializedTablesRef = useRef<Set<string>>(new Set()); // Track tables that have been initialized
     const lastMessageTimeRef = useRef<number>(0);
     const MESSAGE_THROTTLE_MS = 10000; // 10 seconds
 
@@ -316,6 +317,7 @@ export function useDataRefresh() {
     /**
      * Set up refresh intervals for tables with auto-refresh enabled.
      * Uses recursive setTimeout pattern to ensure updates wait until complete.
+     * Triggers immediate refresh for newly loaded tables.
      */
     useEffect(() => {
         // Clear all existing timeouts
@@ -334,22 +336,44 @@ export function useDataRefresh() {
 
             if (shouldAutoRefresh) {
                 const intervalMs = source.refreshIntervalSeconds! * 1000;
+                const isNewTable = !initializedTablesRef.current.has(table.id);
                 
-                console.log(`[DataRefresh] Setting up auto-refresh for "${table.id}" every ${source.refreshIntervalSeconds}s (waiting for completion)`);
+                console.log(`[DataRefresh] Setting up auto-refresh for "${table.id}" every ${source.refreshIntervalSeconds}s (new=${isNewTable})`);
                 
-                // Mark as active
+                // Mark as active and initialized
                 isActiveRef.current.set(table.id, true);
+                initializedTablesRef.current.add(table.id);
                 
-                // Start the refresh cycle - first refresh happens after interval, then schedules next after completion
-                const initialTimeout = setTimeout(async () => {
-                    if (!isActiveRef.current.get(table.id)) {
-                        return;
-                    }
-                    await performRefresh(table);
-                    scheduleNextRefresh(table.id);
-                }, intervalMs);
+                if (isNewTable) {
+                    // For newly loaded tables, trigger immediate refresh then schedule next
+                    console.log(`[DataRefresh] Triggering immediate first refresh for newly loaded table "${table.id}"`);
+                    (async () => {
+                        if (!isActiveRef.current.get(table.id)) {
+                            return;
+                        }
+                        await performRefresh(table);
+                        scheduleNextRefresh(table.id);
+                    })();
+                } else {
+                    // For existing tables, continue with normal interval
+                    const initialTimeout = setTimeout(async () => {
+                        if (!isActiveRef.current.get(table.id)) {
+                            return;
+                        }
+                        await performRefresh(table);
+                        scheduleNextRefresh(table.id);
+                    }, intervalMs);
 
-                timeoutRefs.current.set(table.id, initialTimeout);
+                    timeoutRefs.current.set(table.id, initialTimeout);
+                }
+            }
+        });
+
+        // Clean up tables that no longer exist from the initialized set
+        const currentTableIds = new Set(tables.map(t => t.id));
+        initializedTablesRef.current.forEach(tableId => {
+            if (!currentTableIds.has(tableId)) {
+                initializedTablesRef.current.delete(tableId);
             }
         });
 

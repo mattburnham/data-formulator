@@ -55,9 +55,6 @@ export const DataFormulatorFC = ({ }) => {
     const theme = useTheme();
 
     const dispatch = useDispatch();
-
-    // Set up auto-refresh for streaming and database tables
-    const { manualRefresh, getRefreshInfo } = useDataRefresh();
     
     // Set up automatic refresh of derived tables when source data changes
     useDerivedTableRefresh();
