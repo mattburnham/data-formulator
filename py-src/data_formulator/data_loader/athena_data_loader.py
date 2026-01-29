@@ -179,8 +179,38 @@ aws configure --profile myprofile
         self.workgroup = params.get("workgroup", "primary")
         self.output_location_param = params.get("output_location", "")
         self.database = params.get("database", "")
-        self.query_timeout = int(params.get("query_timeout", 300))
 
+        # Normalize and validate query timeout
+        raw_timeout = params.get("query_timeout", 300)
+        default_timeout = 300
+
+        if raw_timeout is None or (isinstance(raw_timeout, str) and not raw_timeout.strip()):
+            timeout_value = default_timeout
+        elif isinstance(raw_timeout, int):
+            timeout_value = raw_timeout
+        elif isinstance(raw_timeout, float):
+            timeout_value = int(raw_timeout)
+        elif isinstance(raw_timeout, str):
+            try:
+                # Allow values like "300" or "300.0"
+                timeout_value = int(float(raw_timeout.strip()))
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Invalid query_timeout value: {raw_timeout!r}. "
+                    "Expected a positive number (int or float-compatible string)."
+                )
+        else:
+            raise ValueError(
+                f"Invalid type for query_timeout: {type(raw_timeout).__name__}. "
+                "Expected int, float, str, or empty."
+            )
+
+        if timeout_value <= 0:
+            raise ValueError(
+                f"query_timeout must be a positive integer number of seconds, got {timeout_value!r}."
+            )
+
+        self.query_timeout = timeout_value
         # Initialize boto3 session and Athena client
         if self.aws_profile:
             # Use AWS profile from ~/.aws/credentials or ~/.aws/config (including SSO)
