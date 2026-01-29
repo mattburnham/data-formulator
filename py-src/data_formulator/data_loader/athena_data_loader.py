@@ -5,7 +5,7 @@ import time
 import duckdb
 
 from data_formulator.data_loader.external_data_loader import ExternalDataLoader, sanitize_table_name
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from data_formulator.security import validate_sql_query
 
 try:
@@ -54,7 +54,7 @@ def _validate_s3_url(url: str) -> None:
         raise ValueError(f"Invalid S3 URL format: '{url}'. Expected format: 's3://bucket/path'")
 
 
-def _escape_sql_string(value: str | None) -> str:
+def _escape_sql_string(value: Optional[str]) -> str:
     """Escape single quotes in SQL string values."""
     if value is None:
         return ""
@@ -276,10 +276,13 @@ aws configure --profile myprofile
 
         Priority: user-provided output_location > workgroup configuration.
         """
-        # If user provided an output location, use it
+        # If user provided an output location, validate and use it
         if self.output_location_param:
-            log.info(f"Using user-provided output location: {self.output_location_param}")
-            return self.output_location_param
+            _validate_s3_url(self.output_location_param)
+            # Normalize to ensure trailing slash for directory path
+            output_location = self.output_location_param.rstrip('/') + '/'
+            log.info(f"Using user-provided output location: {output_location}")
+            return output_location
 
         # Try to get from workgroup configuration
         try:
