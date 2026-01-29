@@ -366,11 +366,16 @@ aws configure --profile myprofile
         while True:
             elapsed = time.time() - start_time
             if elapsed > self.query_timeout:
-                # Try to cancel the query
+                # Try to cancel the query. This is a best-effort operation: failures are logged
+                # but do not prevent raising the timeout error for the caller.
                 try:
                     self.athena_client.stop_query_execution(QueryExecutionId=query_execution_id)
                 except Exception:
-                    pass
+                    log.warning(
+                        "Failed to cancel Athena query execution %s after timeout",
+                        query_execution_id,
+                        exc_info=True,
+                    )
                 raise TimeoutError(
                     f"Query execution timed out after {self.query_timeout} seconds. "
                     "Consider increasing the query_timeout parameter."
