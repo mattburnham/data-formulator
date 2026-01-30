@@ -912,6 +912,9 @@ export const DBManagerPane: React.FC<{
                             <Typography component="span" sx={{fontSize: 16, fontWeight: "bold"}}>
                                 {currentTable.name}
                             </Typography>
+                            <Typography component="span" sx={{fontSize: 12, color: 'text.secondary'}}>
+                                {currentTable.source_metadata && `imported from ${currentTable.source_metadata.data_loader_type}.${currentTable.source_metadata.source_table_name}`}
+                            </Typography>
                         </Box>
                         <Tooltip title="Drop Table">
                             <IconButton 

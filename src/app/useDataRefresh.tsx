@@ -5,8 +5,8 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { DataFormulatorState, dfActions } from './dfSlice';
 import { AppDispatch } from './store';
-import { DictTable, DataSourceConfig } from '../components/ComponentType';
-import { createTableFromFromObjectArray, createTableFromText } from '../data/utils';
+import { DictTable } from '../components/ComponentType';
+import { createTableFromText } from '../data/utils';
 import { fetchWithSession, getUrls, computeContentHash } from './utils';
 
 interface RefreshResult {
@@ -28,23 +28,6 @@ export function useDataRefresh() {
     const refreshInProgressRef = useRef<Map<string, boolean>>(new Map());
     const isActiveRef = useRef<Map<string, boolean>>(new Map());
     const initializedTablesRef = useRef<Set<string>>(new Set()); // Track tables that have been initialized
-    const lastMessageTimeRef = useRef<number>(0);
-    const MESSAGE_THROTTLE_MS = 10000; // 10 seconds
-
-    /**
-     * Throttled message dispatcher - only sends messages if at least 10 seconds have passed since last message
-     */
-    const dispatchThrottledMessage = useCallback((message: Parameters<typeof dfActions.addMessages>[0]) => {
-        const now = Date.now();
-        const timeSinceLastMessage = now - lastMessageTimeRef.current;
-        
-        if (timeSinceLastMessage >= MESSAGE_THROTTLE_MS) {
-            lastMessageTimeRef.current = now;
-            dispatch(dfActions.addMessages(message));
-        } else {
-            console.log(`[DataRefresh] Throttling message (${Math.round((MESSAGE_THROTTLE_MS - timeSinceLastMessage) / 1000)}s remaining): ${message.value}`);
-        }
-    }, [dispatch]);
 
     /**
      * Fetches fresh data from a streaming URL
@@ -235,12 +218,12 @@ export function useDataRefresh() {
                         }));
 
                         // Notify about the refresh
-                        dispatchThrottledMessage({
+                        dispatch(dfActions.addMessages({
                             timestamp: Date.now(),
                             component: 'Data Refresh',
                             type: 'info',
                             value: `Table "${table.displayId || table.id}" data refreshed (${result.newRows.length} rows)`
-                        });
+                        }));
                     } else {
                         console.log(`[DataRefresh] Table "${table.id}" data unchanged (hash: ${newContentHash.slice(0, 8)})`);
                     }
@@ -251,17 +234,17 @@ export function useDataRefresh() {
                 }
             } else {
                 console.warn(`[DataRefresh] Failed to refresh "${table.id}": ${result.message}`);
-                dispatchThrottledMessage({
+                dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
                     component: 'Data Refresh',
                     type: 'warning',
                     value: `Failed to refresh "${table.displayId || table.id}": ${result.message}`
-                });
+                }));
             }
         } finally {
             refreshInProgressRef.current.set(table.id, false);
         }
-    }, [dispatch, refreshTable, dispatchThrottledMessage]);
+    }, [dispatch, refreshTable]);
 
     /**
      * Schedule the next refresh for a table after the current one completes.
@@ -430,23 +413,6 @@ export function useDerivedTableRefresh() {
     const tables = useSelector((state: DataFormulatorState) => state.tables);
     const prevTableRowsRef = useRef<Map<string, string>>(new Map());
     const refreshInProgressRef = useRef<Set<string>>(new Set());
-    const lastMessageTimeRef = useRef<number>(0);
-    const MESSAGE_THROTTLE_MS = 10000; // 10 seconds
-
-    /**
-     * Throttled message dispatcher - only sends messages if at least 10 seconds have passed since last message
-     */
-    const dispatchThrottledMessage = useCallback((message: Parameters<typeof dfActions.addMessages>[0]) => {
-        const now = Date.now();
-        const timeSinceLastMessage = now - lastMessageTimeRef.current;
-        
-        if (timeSinceLastMessage >= MESSAGE_THROTTLE_MS) {
-            lastMessageTimeRef.current = now;
-            dispatch(dfActions.addMessages(message));
-        } else {
-            console.log(`[DerivedRefresh] Throttling message (${Math.round((MESSAGE_THROTTLE_MS - timeSinceLastMessage) / 1000)}s remaining): ${message.value}`);
-        }
-    }, [dispatch]);
 
     /**
      * Refresh a SQL view (virtual table) by re-sampling from DuckDB.
@@ -477,12 +443,12 @@ export function useDerivedTableRefresh() {
                     rows: data.rows
                 }));
 
-                dispatchThrottledMessage({
+                dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
                     component: 'Data Refresh',
                     type: 'info',
                     value: `View "${derivedTable.displayId || derivedTable.id}" refreshed (${data.rows.length} rows)`
-                });
+                }));
                 return true;
             }
             return false;
@@ -490,7 +456,7 @@ export function useDerivedTableRefresh() {
             console.error(`[DerivedRefresh] Error re-sampling SQL view ${tableName}:`, error);
             return false;
         }
-    }, [dispatch, dispatchThrottledMessage]);
+    }, [dispatch]);
 
     /**
      * Refresh a derived table by re-running its derivation code (Python)
@@ -565,33 +531,33 @@ export function useDerivedTableRefresh() {
                     rows: data.rows
                 }));
 
-                dispatchThrottledMessage({
+                dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
                     component: 'Data Refresh',
                     type: 'info',
                     value: `Derived table "${derivedTable.displayId || derivedTable.id}" refreshed (${data.rows.length} rows)`
-                });
+                }));
             } else {
                 console.error(`[DerivedRefresh] Failed to refresh "${derivedTable.id}": ${data.message}`);
-                dispatchThrottledMessage({
+                dispatch(dfActions.addMessages({
                     timestamp: Date.now(),
                     component: 'Data Refresh',
                     type: 'warning',
                     value: `Failed to refresh "${derivedTable.displayId || derivedTable.id}": ${data.message}`
-                });
+                }));
             }
         } catch (error) {
             console.error(`[DerivedRefresh] Error refreshing derived table ${derivedTable.id}:`, error);
-            dispatchThrottledMessage({
+            dispatch(dfActions.addMessages({
                 timestamp: Date.now(),
                 component: 'Data Refresh',
                 type: 'error',
                 value: `Error refreshing "${derivedTable.displayId || derivedTable.id}": ${error instanceof Error ? error.message : 'Unknown error'}`
-            });
+            }));
         } finally {
             refreshInProgressRef.current.delete(derivedTable.id);
         }
-    }, [dispatch, refreshSqlView, dispatchThrottledMessage]);
+    }, [dispatch, refreshSqlView]);
 
     /**
      * Check for table changes and refresh dependent derived tables.

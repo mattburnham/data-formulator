@@ -34,18 +34,15 @@ export interface Message {
 }
 
 export function MessageSnackbar() {
-    const theme = useTheme();
   
     const messages = useSelector((state: DataFormulatorState) => state.messages);
     const displayedMessageIdx = useSelector((state: DataFormulatorState) => state.displayedMessageIdx);
     
     const dispatch = useDispatch();
-    const tables = useSelector((state: DataFormulatorState) => state.tables);
 
     const [openLastMessage, setOpenLastMessage] = React.useState(false);
     const [latestMessage, setLatestMessage] = React.useState<Message | undefined>();
 
-    const [openChallenge, setOpenChallenge] = React.useState(true);
     const [openMessages, setOpenMessages] = React.useState(false);
     const [expandedMessages, setExpandedMessages] = React.useState<string[]>([]);
 
