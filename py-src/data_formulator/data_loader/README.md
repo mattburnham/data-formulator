@@ -22,8 +22,15 @@ The UI automatically provide the query completion option to help user generate q
 
 ### Example Implementations
 
+- `AthenaDataLoader`: AWS Athena integration (SQL queries on S3 data lakes)
+- `BigQueryDataLoader`: Google BigQuery integration
 - `KustoDataLoader`: Azure Data Explorer (Kusto) integration
 - `MySQLDataLoader`: MySQL database integration
+- `PostgreSQLDataLoader`: PostgreSQL database integration
+- `MSSQLDataLoader`: Microsoft SQL Server integration
+- `S3DataLoader`: Amazon S3 file integration (CSV, Parquet, JSON)
+- `AzureBlobDataLoader`: Azure Blob Storage integration
+- `MongoDBDataLoader`: MongoDB integration
 
 ### Testing
 
