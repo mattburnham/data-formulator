@@ -60,7 +60,7 @@ export function getUrls() {
         GENERATE_REPORT_STREAM: `/api/agent/generate-report-stream`,
 
         // Refresh data endpoint
-        REFRESH_DERIVED_DATA: `/api/tables/refresh-derived-data`,
+        REFRESH_DERIVED_DATA: `/api/agent/refresh-derived-data`,
     };
 }
 
@@ -85,7 +85,6 @@ const SESSION_REQUIRED_ENDPOINTS = [
     '/api/tables/data-loader/refresh-table',
     '/api/tables/data-loader/get-table-metadata',
     '/api/tables/data-loader/list-table-metadata',
-    '/api/tables/refresh-derived-data',
 ];
 
 /**

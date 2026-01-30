@@ -106,7 +106,7 @@ def make_csv_response(rows: list, filename: str = "data.csv") -> Response:
 
 # Thread-safe storage for ISS position history
 _iss_track_lock = threading.Lock()
-_iss_track_history: deque = deque(maxlen=500)  # Keep last 500 positions (~40 min at 5s intervals)
+_iss_track_history: deque = deque(maxlen=10000)  # Keep last 10000 positions (~20000 min at 5s intervals)
 _iss_last_fetch: Optional[datetime] = None
 
 def _fetch_iss_position() -> Optional[Dict[str, Any]]:
@@ -143,8 +143,8 @@ def get_iss():
     """
     global _iss_last_fetch
     
-    minutes = min(90, max(1, int(request.args.get('minutes', 30))))
-    limit = min(500, max(10, int(request.args.get('limit', 500))))
+    minutes = min(1440, max(1, int(request.args.get('minutes', 1440))))
+    limit = min(10000, max(1000, int(request.args.get('limit', 10000))))
     
     now = datetime.utcnow()
     cutoff = now - timedelta(minutes=minutes)
